@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "890292247864",
+    "project_id": "ttsapp-6b17a",
+    "storage_bucket": "ttsapp-6b17a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:890292247864:android:d3ea5b50774b9eb4c275cd",
+        "android_client_info": {
+          "package_name": "com.example.tts"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyApBuib0kOHqeiObbKQJxizUG2ztmO4GeY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
