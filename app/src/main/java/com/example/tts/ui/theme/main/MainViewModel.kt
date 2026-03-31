@@ -1,86 +1,127 @@
 package com.example.tts.ui.theme.main
 
-import android.content.Context
+import android.app.Application
 import android.media.MediaPlayer
-import android.util.Log
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.tts.R
+import com.example.tts.data.local.AppDatabase
 import com.example.tts.data.model.AudioMessage
 import com.example.tts.data.repository.AudioRepository
 import com.example.tts.data.transcription.VoskTranscriptionService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
+class MainViewModel(
+    application: Application
+) : AndroidViewModel(application) {
 
-
-class MainViewModel : ViewModel() {
-
-    private val repository = AudioRepository()
+    private val repository = AudioRepository(
+        AppDatabase.getInstance(application).audioMessageDao()
+    )
 
     private val _uiState = MutableStateFlow<MainUiState>(MainUiState.Loading)
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     private var mediaPlayer: MediaPlayer? = null
-    private var currentPlayingFile: String? = null
+    private var currentPlayingFilePath: String? = null
+    private var observeJob: Job? = null
 
     fun loadMessages(userId: String) {
-        viewModelScope.launch {
-            try {
-                val messages = repository.getAudioMessagesForUser(userId)
-                _uiState.update { MainUiState.Success(messages) }
-            } catch (e: Exception) {
-                _uiState.update { MainUiState.Error(e.message ?: "Unknown error") }
-            }
+        observeJob?.cancel()
+
+        observeJob = viewModelScope.launch {
+            repository.observeAudioMessagesForUser(userId)
+                .onStart {
+                    _uiState.value = MainUiState.Loading
+                }
+                .catch { e ->
+                    _uiState.value = MainUiState.Error(
+                        e.message ?: "Ошибка загрузки данных"
+                    )
+                }
+                .collectLatest { messages ->
+                    _uiState.value = MainUiState.Success(messages)
+                }
         }
     }
 
-    fun saveRecording(fileName: String, userId: String, context: Context) {
+    fun saveRecording(
+        filePath: String,
+        userId: String
+    ) {
         viewModelScope.launch {
             try {
-                val file = File(context.cacheDir, fileName)
+                val appContext = getApplication<Application>()
+                val file = File(filePath)
 
-                val vosk = VoskTranscriptionService.get(context)
-                val transcript = try {
-                    vosk.transcribeWav(file)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    "Ошибка распознавания: ${e.message}"
+                if (!file.exists()) {
+                    _uiState.update {
+                        MainUiState.Error("Файл записи не найден")
+                    }
+                    return@launch
                 }
 
-                repository.saveAudioMessage(
-                    AudioMessage(
-                        userId = userId,
-                        fileName = fileName,
-                        transcript = transcript
-                    )
+                val transcript = withContext(Dispatchers.IO) {
+                    val vosk = VoskTranscriptionService.get(appContext)
+                    try {
+                        vosk.transcribeWav(file)
+                    } catch (e: Exception) {
+                        "Ошибка распознавания: ${e.message}"
+                    }
+                }
+
+                val message = AudioMessage(
+                    userId = userId,
+                    title = file.nameWithoutExtension,
+                    fileName = file.name,
+                    filePath = file.absolutePath,
+                    transcript = transcript,
+                    createdAt = System.currentTimeMillis(),
+                    durationMs = 0L,
+                    isFavorite = false
                 )
 
-                loadMessages(userId)
+                withContext(Dispatchers.IO) {
+                    repository.saveAudioMessage(message)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
-                _uiState.update { MainUiState.Error(e.message ?: "Save failed") }
+                _uiState.update {
+                    MainUiState.Error(e.message ?: "Save failed")
+                }
             }
         }
     }
 
-    fun playRecording(context: Context, fileName: String) {
+    fun playRecording(filePath: String) {
         stopCurrentPlayback()
+
         try {
-            val file = File(context.cacheDir, fileName)
+            val file = File(filePath)
             if (!file.exists()) return
 
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(file.absolutePath)
                 prepare()
                 start()
-                setOnCompletionListener { stopCurrentPlayback() }
+                setOnCompletionListener {
+                    stopCurrentPlayback()
+                }
             }
-            currentPlayingFile = fileName
+
+            currentPlayingFilePath = filePath
         } catch (e: Exception) {
             e.printStackTrace()
             stopCurrentPlayback()
@@ -89,15 +130,87 @@ class MainViewModel : ViewModel() {
 
     fun stopCurrentPlayback() {
         mediaPlayer?.apply {
-            if (isPlaying) stop()
+            try {
+                if (isPlaying) stop()
+            } catch (_: Exception) {
+            }
             release()
         }
         mediaPlayer = null
-        currentPlayingFile = null
+        currentPlayingFilePath = null
     }
 
-    fun isPlaying(fileName: String): Boolean {
-        return currentPlayingFile == fileName && mediaPlayer?.isPlaying == true
+    fun isPlaying(filePath: String): Boolean {
+        return currentPlayingFilePath == filePath && mediaPlayer?.isPlaying == true
+    }
+
+    fun deleteRecording(message: AudioMessage) {
+        if (isPlaying(message.filePath)) {
+            stopCurrentPlayback()
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val file = File(message.filePath)
+                if (file.exists()) {
+                    file.delete()
+                }
+
+                repository.deleteAudioMessage(message)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _uiState.update {
+                    MainUiState.Error(e.message ?: "Delete failed")
+                }
+            }
+        }
+    }
+
+    fun toggleFavorite(message: AudioMessage) {
+        if (message.id == 0L) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.setFavorite(
+                    messageId = message.id,
+                    isFavorite = !message.isFavorite
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _uiState.update {
+                    MainUiState.Error(e.message ?: "Не удалось изменить избранное")
+                }
+            }
+        }
+    }
+
+    fun updateMessage(
+        message: AudioMessage,
+        newTitle: String,
+        newTranscript: String
+    ) {
+        if (message.id == 0L) return
+
+        val safeTitle = newTitle.trim().ifBlank {
+            message.fileName.substringBeforeLast(".").ifBlank { message.fileName }
+        }
+
+        val safeTranscript = newTranscript.trim()
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.updateAudioMessage(
+                    messageId = message.id,
+                    title = safeTitle,
+                    transcript = safeTranscript
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _uiState.update {
+                    MainUiState.Error(e.message ?: "Не удалось обновить запись")
+                }
+            }
+        }
     }
 
     override fun onCleared() {
@@ -105,24 +218,16 @@ class MainViewModel : ViewModel() {
         super.onCleared()
     }
 
-    fun deleteRecording(message: com.example.tts.data.model.AudioMessage, context: Context) {
-        viewModelScope.launch {
-            try {
-                if (isPlaying(message.fileName)) {
-                    stopCurrentPlayback()
+    companion object {
+        fun provideFactory(application: Application): ViewModelProvider.Factory {
+            return object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    if (modelClass.isAssignableFrom(MainViewModel::class.java)) {
+                        return MainViewModel(application) as T
+                    }
+                    throw IllegalArgumentException("Unknown ViewModel class")
                 }
-
-                runCatching {
-                    File(context.cacheDir, message.fileName).delete()
-                }
-
-                repository.deleteAudioMessage(message)
-
-                val uid = if (message.userId.isNotBlank()) message.userId else return@launch
-                loadMessages(uid)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                _uiState.update { MainUiState.Error(e.message ?: "Delete failed") }
             }
         }
     }

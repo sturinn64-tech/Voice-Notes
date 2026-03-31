@@ -1,7 +1,14 @@
 package com.example.tts
 
 import android.Manifest
+import android.app.Application
 import android.content.pm.PackageManager
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -10,12 +17,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import com.example.tts.navigation.AppScreen
+import com.example.tts.navigation.bottomBarScreens
 import com.example.tts.ui.theme.login.LoginScreen
-import com.example.tts.ui.theme.main.MainScreen
 import com.example.tts.ui.theme.main.HistoryScreen
+import com.example.tts.ui.theme.main.MainScreen
 import com.example.tts.ui.theme.main.MainViewModel
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -29,60 +45,116 @@ fun AppNavigation() {
         val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
             currentUser = firebaseAuth.currentUser
         }
+
         auth.addAuthStateListener(listener)
-        onDispose { auth.removeAuthStateListener(listener) }
+
+        onDispose {
+            auth.removeAuthStateListener(listener)
+        }
     }
 
-    if (currentUser != null) {
-        MainRoute(
+    if (currentUser == null) {
+        LoginScreen()
+    } else {
+        AuthorizedApp(
             user = currentUser!!,
             onSignOut = {
                 auth.signOut()
                 currentUser = null
             }
         )
-    } else {
-        LoginScreen()
     }
 }
 
 @Composable
-fun MainRoute(
+private fun AuthorizedApp(
     user: FirebaseUser,
     onSignOut: () -> Unit
 ) {
-    val viewModel: MainViewModel = viewModel()
-    var currentScreen by remember { mutableStateOf("main") }
     val context = LocalContext.current
+    val application = context.applicationContext as Application
+
+    val viewModel: MainViewModel = viewModel(
+        factory = MainViewModel.provideFactory(application)
+    )
+
+    val navController = rememberNavController()
 
     LaunchedEffect(user.uid) {
-        viewModel.loadMessages(userId = user.uid)
+        viewModel.loadMessages(user.uid)
     }
 
-    when (currentScreen) {
-        "main" -> {
-            val hasPermission = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.RECORD_AUDIO
-            ) == PackageManager.PERMISSION_GRANTED
-
-            MainScreen(
-                user = user,
-                onGoToHistory = { currentScreen = "history" },
-                hasRecordPermission = hasPermission,
-                onSignOut = onSignOut,
-                onSaveRecording = { fileName ->
-                    viewModel.saveRecording(fileName, user.uid, context)
-                }
-            )
+    Scaffold(
+        bottomBar = {
+            BottomBar(navController = navController)
         }
+    ) { paddingValues ->
+        NavHost(
+            navController = navController,
+            startDestination = AppScreen.Record.route,
+            modifier = Modifier.padding(paddingValues)
+        ) {
+            composable(AppScreen.Record.route) {
+                val hasPermission = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
 
-        "history" -> {
-            HistoryScreen(
-                uiState = viewModel.uiState.collectAsState().value,
-                onBack = { currentScreen = "main" },
-                onSignOut = onSignOut,
-                viewModel = viewModel
+                MainScreen(
+                    user = user,
+                    hasRecordPermission = hasPermission,
+                    onSignOut = onSignOut,
+                    onSaveRecording = { filePath ->
+                        viewModel.saveRecording(
+                            filePath = filePath,
+                            userId = user.uid
+                        )
+                    }
+                )
+            }
+
+            composable(AppScreen.History.route) {
+                val uiState by viewModel.uiState.collectAsState()
+
+                HistoryScreen(
+                    uiState = uiState,
+                    onSignOut = onSignOut,
+                    viewModel = viewModel
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BottomBar(
+    navController: NavHostController
+) {
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+
+    NavigationBar {
+        bottomBarScreens.forEach { screen ->
+            NavigationBarItem(
+                selected = currentRoute == screen.route,
+                onClick = {
+                    navController.navigate(screen.route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                icon = {
+                    Icon(
+                        imageVector = screen.icon,
+                        contentDescription = screen.title
+                    )
+                },
+                label = {
+                    Text(screen.title)
+                }
             )
         }
     }

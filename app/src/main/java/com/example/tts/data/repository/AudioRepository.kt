@@ -1,52 +1,44 @@
 package com.example.tts.data.repository
 
+import com.example.tts.data.local.AudioMessageDao
+import com.example.tts.data.local.toDomain
+import com.example.tts.data.local.toEntity
 import com.example.tts.data.model.AudioMessage
-import com.google.firebase.Timestamp
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
-import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
-class AudioRepository {
-
-    private val db = FirebaseFirestore.getInstance()
-    private val collection = db.collection("audio_messages")
-
-    suspend fun saveAudioMessage(message: AudioMessage) {
-        val data = hashMapOf(
-            "userId" to message.userId,
-            "fileName" to message.fileName,
-            "transcript" to message.transcript,
-            "timestamp" to message.timestamp
-        )
-        collection.add(data).await()
+class AudioRepository(
+    private val audioMessageDao: AudioMessageDao
+) {
+    fun observeAudioMessagesForUser(userId: String): Flow<List<AudioMessage>> {
+        return audioMessageDao.observeMessagesForUser(userId).map { entities ->
+            entities.map { it.toDomain() }
+        }
     }
 
-    suspend fun getAudioMessagesForUser(userId: String): List<AudioMessage> {
-        val snapshot = collection
-            .whereEqualTo("userId", userId)
-            .orderBy("timestamp", Query.Direction.DESCENDING)
-            .get()
-            .await()
-
-        return snapshot.documents.mapNotNull { doc ->
-            doc.toObject(AudioMessage::class.java)?.copy(id = doc.id)
-        }.sortedByDescending { it.timestamp.toDate().time }
+    suspend fun saveAudioMessage(message: AudioMessage): Long {
+        return audioMessageDao.insert(message.toEntity())
     }
 
     suspend fun deleteAudioMessage(message: AudioMessage) {
-        if (message.id.isNotBlank()) {
-            collection.document(message.id).delete().await()
-            return
+        if (message.id != 0L) {
+            audioMessageDao.deleteById(message.id)
         }
+    }
 
-        val snap = collection
-            .whereEqualTo("userId", message.userId)
-            .whereEqualTo("fileName", message.fileName)
-            .get()
-            .await()
+    suspend fun setFavorite(messageId: Long, isFavorite: Boolean) {
+        audioMessageDao.updateFavorite(messageId, isFavorite)
+    }
 
-        for (doc in snap.documents) {
-            doc.reference.delete().await()
-        }
+    suspend fun updateAudioMessage(
+        messageId: Long,
+        title: String,
+        transcript: String
+    ) {
+        audioMessageDao.updateMessage(
+            id = messageId,
+            title = title,
+            transcript = transcript
+        )
     }
 }
