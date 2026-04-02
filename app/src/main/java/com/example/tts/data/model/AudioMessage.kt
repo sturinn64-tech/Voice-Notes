@@ -11,5 +11,7 @@ data class AudioMessage(
     val transcript: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val durationMs: Long = 0L,
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    val transcriptionStatus: TranscriptionStatus = TranscriptionStatus.COMPLETED,
+    val transcriptionError: String? = null
 )

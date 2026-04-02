@@ -43,4 +43,20 @@ interface AudioMessageDao {
         """
     )
     suspend fun updateMessage(id: Long, title: String, transcript: String)
+
+    @Query(
+        """
+        UPDATE audio_messages
+        SET transcript = :transcript,
+            transcriptionStatus = :status,
+            transcriptionError = :error
+        WHERE id = :id
+        """
+    )
+    suspend fun updateTranscriptionState(
+        id: Long,
+        transcript: String,
+        status: String,
+        error: String?
+    )
 }

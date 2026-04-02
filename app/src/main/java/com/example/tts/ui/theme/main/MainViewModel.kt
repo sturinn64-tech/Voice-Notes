@@ -1,6 +1,7 @@
 package com.example.tts.ui.theme.main
 
 import android.app.Application
+import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
@@ -8,6 +9,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.tts.data.local.AppDatabase
 import com.example.tts.data.model.AudioMessage
+import com.example.tts.data.model.TranscriptionStatus
 import com.example.tts.data.repository.AudioRepository
 import com.example.tts.data.transcription.VoskTranscriptionService
 import kotlinx.coroutines.Dispatchers
@@ -40,7 +42,6 @@ class MainViewModel(
 
     fun loadMessages(userId: String) {
         observeJob?.cancel()
-
         observeJob = viewModelScope.launch {
             repository.observeAudioMessagesForUser(userId)
                 .onStart {
@@ -73,28 +74,51 @@ class MainViewModel(
                     return@launch
                 }
 
-                val transcript = withContext(Dispatchers.IO) {
-                    val vosk = VoskTranscriptionService.get(appContext)
-                    try {
-                        vosk.transcribeWav(file)
-                    } catch (e: Exception) {
-                        "Ошибка распознавания: ${e.message}"
-                    }
+                val durationMs = withContext(Dispatchers.IO) {
+                    extractDurationMs(file.absolutePath)
                 }
 
-                val message = AudioMessage(
+                val draftMessage = AudioMessage(
                     userId = userId,
                     title = file.nameWithoutExtension,
                     fileName = file.name,
                     filePath = file.absolutePath,
-                    transcript = transcript,
+                    transcript = "",
                     createdAt = System.currentTimeMillis(),
-                    durationMs = 0L,
-                    isFavorite = false
+                    durationMs = durationMs,
+                    isFavorite = false,
+                    transcriptionStatus = TranscriptionStatus.PROCESSING,
+                    transcriptionError = null
                 )
 
+                val messageId = withContext(Dispatchers.IO) {
+                    repository.saveAudioMessage(draftMessage)
+                }
+
+                val transcriptionResult = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val vosk = VoskTranscriptionService.get(appContext)
+                        vosk.transcribeWav(file).trim()
+                    }
+                }
+
                 withContext(Dispatchers.IO) {
-                    repository.saveAudioMessage(message)
+                    if (transcriptionResult.isSuccess) {
+                        repository.updateTranscriptionState(
+                            messageId = messageId,
+                            transcript = transcriptionResult.getOrNull().orEmpty(),
+                            status = TranscriptionStatus.COMPLETED,
+                            error = null
+                        )
+                    } else {
+                        repository.updateTranscriptionState(
+                            messageId = messageId,
+                            transcript = "",
+                            status = TranscriptionStatus.ERROR,
+                            error = transcriptionResult.exceptionOrNull()?.message
+                                ?: "Неизвестная ошибка распознавания"
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -136,6 +160,7 @@ class MainViewModel(
             }
             release()
         }
+
         mediaPlayer = null
         currentPlayingFilePath = null
     }
@@ -194,7 +219,6 @@ class MainViewModel(
         val safeTitle = newTitle.trim().ifBlank {
             message.fileName.substringBeforeLast(".").ifBlank { message.fileName }
         }
-
         val safeTranscript = newTranscript.trim()
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -216,6 +240,23 @@ class MainViewModel(
     override fun onCleared() {
         stopCurrentPlayback()
         super.onCleared()
+    }
+
+    private fun extractDurationMs(filePath: String): Long {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(filePath)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()
+                ?: 0L
+        } catch (_: Exception) {
+            0L
+        } finally {
+            try {
+                retriever.release()
+            } catch (_: Exception) {
+            }
+        }
     }
 
     companion object {

@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.example.tts.data.model.AudioMessage
+import com.example.tts.data.model.TranscriptionStatus
 
 @Entity(
     tableName = "audio_messages",
@@ -23,7 +24,9 @@ data class AudioMessageEntity(
     val transcript: String,
     val createdAt: Long,
     val durationMs: Long,
-    val isFavorite: Boolean
+    val isFavorite: Boolean,
+    val transcriptionStatus: String,
+    val transcriptionError: String?
 )
 
 fun AudioMessageEntity.toDomain(): AudioMessage {
@@ -36,7 +39,11 @@ fun AudioMessageEntity.toDomain(): AudioMessage {
         transcript = transcript,
         createdAt = createdAt,
         durationMs = durationMs,
-        isFavorite = isFavorite
+        isFavorite = isFavorite,
+        transcriptionStatus = runCatching {
+            TranscriptionStatus.valueOf(transcriptionStatus)
+        }.getOrDefault(TranscriptionStatus.COMPLETED),
+        transcriptionError = transcriptionError
     )
 }
 
@@ -50,6 +57,8 @@ fun AudioMessage.toEntity(): AudioMessageEntity {
         transcript = transcript,
         createdAt = createdAt,
         durationMs = durationMs,
-        isFavorite = isFavorite
+        isFavorite = isFavorite,
+        transcriptionStatus = transcriptionStatus.name,
+        transcriptionError = transcriptionError
     )
 }

@@ -4,12 +4,14 @@ import com.example.tts.data.local.AudioMessageDao
 import com.example.tts.data.local.toDomain
 import com.example.tts.data.local.toEntity
 import com.example.tts.data.model.AudioMessage
+import com.example.tts.data.model.TranscriptionStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class AudioRepository(
     private val audioMessageDao: AudioMessageDao
 ) {
+
     fun observeAudioMessagesForUser(userId: String): Flow<List<AudioMessage>> {
         return audioMessageDao.observeMessagesForUser(userId).map { entities ->
             entities.map { it.toDomain() }
@@ -39,6 +41,20 @@ class AudioRepository(
             id = messageId,
             title = title,
             transcript = transcript
+        )
+    }
+
+    suspend fun updateTranscriptionState(
+        messageId: Long,
+        transcript: String,
+        status: TranscriptionStatus,
+        error: String?
+    ) {
+        audioMessageDao.updateTranscriptionState(
+            id = messageId,
+            transcript = transcript,
+            status = status.name,
+            error = error
         )
     }
 }

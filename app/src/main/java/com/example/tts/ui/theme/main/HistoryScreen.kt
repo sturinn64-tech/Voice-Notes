@@ -1,5 +1,10 @@
 package com.example.tts.ui.theme.main
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,9 +17,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Warning
@@ -37,14 +44,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import com.example.tts.data.model.AudioMessage
 import java.io.File
 import java.text.SimpleDateFormat
@@ -64,6 +73,8 @@ fun HistoryScreen(
     onSignOut: () -> Unit,
     viewModel: MainViewModel
 ) {
+    val context = LocalContext.current
+
     val pendingDelete = remember { mutableStateOf<AudioMessage?>(null) }
     val pendingEdit = remember { mutableStateOf<AudioMessage?>(null) }
 
@@ -76,7 +87,7 @@ fun HistoryScreen(
         AlertDialog(
             onDismissRequest = { pendingDelete.value = null },
             title = { Text("Удалить запись?") },
-            text = { Text("Файл и запись будут удалены.") },
+            text = { Text("Запись будет удалена из истории.") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -88,9 +99,7 @@ fun HistoryScreen(
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = { pendingDelete.value = null }
-                ) {
+                TextButton(onClick = { pendingDelete.value = null }) {
                     Text("Отмена")
                 }
             }
@@ -217,7 +226,7 @@ fun HistoryScreen(
                                 value = searchQuery,
                                 onValueChange = { searchQuery = it },
                                 label = { Text("Поиск") },
-                                placeholder = { Text("По названию и транскрипту") },
+                                placeholder = { Text("По названию и тексту") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -275,17 +284,21 @@ fun HistoryScreen(
 
                     if (uiState.messages.isEmpty()) {
                         Box(
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
                             contentAlignment = Alignment.Center
                         ) {
                             Text("Записей пока нет")
                         }
                     } else if (filteredMessages.isEmpty()) {
                         Box(
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Ничего не найдено по текущим фильтрам")
+                            Text("Ничего не найдено")
                         }
                     } else {
                         LazyColumn(
@@ -309,7 +322,27 @@ fun HistoryScreen(
                                     onStop = { viewModel.stopCurrentPlayback() },
                                     onDelete = { pendingDelete.value = msg },
                                     onEdit = { pendingEdit.value = msg },
-                                    onToggleFavorite = { viewModel.toggleFavorite(msg) }
+                                    onToggleFavorite = { viewModel.toggleFavorite(msg) },
+                                    onCopyTranscript = {
+                                        copyTranscript(
+                                            context = context,
+                                            text = msg.transcript.ifBlank { "Транскрипт пустой" }
+                                        )
+                                    },
+                                    onShareTranscript = {
+                                        shareText(
+                                            context = context,
+                                            title = msg.title.ifBlank { msg.fileName },
+                                            text = msg.transcript.ifBlank { "Транскрипт пустой" }
+                                        )
+                                    },
+                                    onShareAudio = {
+                                        shareAudio(
+                                            context = context,
+                                            filePath = msg.filePath,
+                                            title = msg.title.ifBlank { msg.fileName }
+                                        )
+                                    }
                                 )
                             }
                         }
@@ -333,10 +366,7 @@ private fun EditRecordingDialog(
             }
         )
     }
-
-    var transcript by remember(message.id) {
-        mutableStateOf(message.transcript)
-    }
+    var transcript by remember(message.id) { mutableStateOf(message.transcript) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -348,7 +378,7 @@ private fun EditRecordingDialog(
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Заголовок") },
+                    label = { Text("Название") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -356,7 +386,7 @@ private fun EditRecordingDialog(
                 OutlinedTextField(
                     value = transcript,
                     onValueChange = { transcript = it },
-                    label = { Text("Транскрипт") },
+                    label = { Text("Текст") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .widthIn(min = 280.dp)
@@ -365,9 +395,7 @@ private fun EditRecordingDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = {
-                    onSave(title, transcript)
-                }
+                onClick = { onSave(title, transcript) }
             ) {
                 Text("Сохранить")
             }
@@ -389,8 +417,13 @@ private fun RecordingCard(
     onStop: () -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
-    onToggleFavorite: () -> Unit
+    onToggleFavorite: () -> Unit,
+    onCopyTranscript: () -> Unit,
+    onShareTranscript: () -> Unit,
+    onShareAudio: () -> Unit
 ) {
+    var shareMenuExpanded by remember(message.id) { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -407,7 +440,8 @@ private fun RecordingCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
                         text = message.title.ifBlank { message.fileName },
@@ -438,7 +472,7 @@ private fun RecordingCard(
             }
 
             Text(
-                text = message.transcript.ifBlank { "Транскрипт пока пустой" },
+                text = message.transcript.ifBlank { "Транскрипт пустой" },
                 style = MaterialTheme.typography.bodyMedium
             )
 
@@ -451,11 +485,7 @@ private fun RecordingCard(
                         onClick = if (isPlaying) onStop else onPlay
                     ) {
                         Icon(
-                            imageVector = if (isPlaying) {
-                                Icons.Filled.Close
-                            } else {
-                                Icons.Rounded.PlayArrow
-                            },
+                            imageVector = Icons.Rounded.PlayArrow,
                             contentDescription = if (isPlaying) {
                                 "Остановить"
                             } else {
@@ -469,6 +499,45 @@ private fun RecordingCard(
                         contentDescription = "Файл не найден",
                         modifier = Modifier.padding(end = 8.dp)
                     )
+                }
+
+                IconButton(onClick = onCopyTranscript) {
+                    Icon(
+                        imageVector = Icons.Filled.ContentCopy,
+                        contentDescription = "Скопировать текст"
+                    )
+                }
+
+                Box {
+                    IconButton(onClick = { shareMenuExpanded = true }) {
+                        Icon(
+                            imageVector = Icons.Filled.Share,
+                            contentDescription = "Поделиться"
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = shareMenuExpanded,
+                        onDismissRequest = { shareMenuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Поделиться текстом") },
+                            onClick = {
+                                shareMenuExpanded = false
+                                onShareTranscript()
+                            }
+                        )
+
+                        if (fileExists) {
+                            DropdownMenuItem(
+                                text = { Text("Поделиться аудио") },
+                                onClick = {
+                                    shareMenuExpanded = false
+                                    onShareAudio()
+                                }
+                            )
+                        }
+                    }
                 }
 
                 IconButton(onClick = onEdit) {
@@ -486,6 +555,61 @@ private fun RecordingCard(
                 }
             }
         }
+    }
+}
+
+private fun copyTranscript(context: Context, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText("transcript", text))
+    Toast.makeText(context, "Текст скопирован", Toast.LENGTH_SHORT).show()
+}
+
+private fun shareText(context: Context, title: String, text: String) {
+    try {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, title)
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        context.startActivity(Intent.createChooser(intent, "Поделиться текстом"))
+    } catch (_: Exception) {
+        Toast.makeText(
+            context,
+            "Не удалось открыть меню отправки",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+}
+
+private fun shareAudio(context: Context, filePath: String, title: String) {
+    try {
+        val file = File(filePath)
+
+        if (!file.exists()) {
+            Toast.makeText(context, "Аудиофайл не найден", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "audio/*"
+            putExtra(Intent.EXTRA_SUBJECT, title)
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        context.startActivity(Intent.createChooser(intent, "Поделиться аудио"))
+    } catch (_: Exception) {
+        Toast.makeText(
+            context,
+            "Не удалось поделиться аудио",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 }
 
