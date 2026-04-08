@@ -1,54 +1,89 @@
 package com.example.tts.ui.theme
 
-import android.app.Activity
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import com.example.tts.data.settings.AppThemeMode
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+private val LightColors = lightColorScheme(
+    primary = BrandPrimary,
+    onPrimary = Color.White,
+    primaryContainer = BrandPrimaryContainer,
+    onPrimaryContainer = BrandTextPrimary,
+
+    secondary = BrandSecondary,
+    onSecondary = Color.White,
+    secondaryContainer = BrandSecondaryContainer,
+    onSecondaryContainer = BrandTextPrimary,
+
+    tertiary = BrandTertiary,
+    onTertiary = Color.White,
+
+    background = AppBackgroundLight,
+    onBackground = BrandTextPrimary,
+
+    surface = AppSurfaceLight,
+    onSurface = BrandTextPrimary,
+
+    surfaceVariant = AppSurfaceAltLight,
+    onSurfaceVariant = BrandTextSecondary,
+
+    outline = BrandOutline,
+    outlineVariant = BrandOutlineVariant,
+
+    error = BrandError,
+    onError = Color.White,
+    errorContainer = BrandErrorContainer,
+    onErrorContainer = BrandTextPrimary
 )
 
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
+private val DarkColors = darkColorScheme(
+    primary = BrandPrimaryDark,
+    onPrimary = Color(0xFF111827),
+    primaryContainer = Color(0xFF2A326A),
+    onPrimaryContainer = BrandTextPrimaryDark,
 
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    secondary = BrandSecondaryDark,
+    onSecondary = Color(0xFF082F49),
+    secondaryContainer = Color(0xFF163B4A),
+    onSecondaryContainer = BrandTextPrimaryDark,
+
+    tertiary = BrandTertiaryDark,
+    onTertiary = Color(0xFF0F172A),
+
+    background = AppBackgroundDark,
+    onBackground = BrandTextPrimaryDark,
+
+    surface = AppSurfaceDark,
+    onSurface = BrandTextPrimaryDark,
+
+    surfaceVariant = AppSurfaceAltDark,
+    onSurfaceVariant = BrandTextSecondaryDark,
+
+    outline = BrandOutlineDark,
+    outlineVariant = BrandOutlineVariantDark,
+
+    error = BrandErrorDark,
+    onError = Color(0xFF1F1111),
+    errorContainer = BrandErrorContainerDark,
+    onErrorContainer = BrandTextPrimaryDark
 )
 
 @Composable
 fun TtsTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+    val darkTheme = when (themeMode) {
+        AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.DARK -> true
     }
+
+    val colorScheme = if (darkTheme) DarkColors else LightColors
 
     MaterialTheme(
         colorScheme = colorScheme,

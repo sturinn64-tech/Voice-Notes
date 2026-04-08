@@ -27,17 +27,23 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.tts.data.settings.AppSettings
 import com.example.tts.navigation.AppScreen
 import com.example.tts.navigation.bottomBarScreens
 import com.example.tts.ui.theme.login.LoginScreen
 import com.example.tts.ui.theme.main.HistoryScreen
 import com.example.tts.ui.theme.main.MainScreen
 import com.example.tts.ui.theme.main.MainViewModel
+import com.example.tts.ui.theme.settings.SettingsScreen
+import com.example.tts.ui.theme.settings.SettingsViewModel
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 
 @Composable
-fun AppNavigation() {
+fun AppNavigation(
+    appSettings: AppSettings,
+    settingsViewModel: SettingsViewModel
+) {
     val auth = FirebaseAuth.getInstance()
     var currentUser by remember { mutableStateOf(auth.currentUser) }
 
@@ -45,12 +51,8 @@ fun AppNavigation() {
         val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
             currentUser = firebaseAuth.currentUser
         }
-
         auth.addAuthStateListener(listener)
-
-        onDispose {
-            auth.removeAuthStateListener(listener)
-        }
+        onDispose { auth.removeAuthStateListener(listener) }
     }
 
     if (currentUser == null) {
@@ -61,7 +63,9 @@ fun AppNavigation() {
             onSignOut = {
                 auth.signOut()
                 currentUser = null
-            }
+            },
+            appSettings = appSettings,
+            settingsViewModel = settingsViewModel
         )
     }
 }
@@ -69,19 +73,21 @@ fun AppNavigation() {
 @Composable
 private fun AuthorizedApp(
     user: FirebaseUser,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    appSettings: AppSettings,
+    settingsViewModel: SettingsViewModel
 ) {
     val context = LocalContext.current
     val application = context.applicationContext as Application
 
-    val viewModel: MainViewModel = viewModel(
+    val mainViewModel: MainViewModel = viewModel(
         factory = MainViewModel.provideFactory(application)
     )
 
     val navController = rememberNavController()
 
     LaunchedEffect(user.uid) {
-        viewModel.loadMessages(user.uid)
+        mainViewModel.loadMessages(user.uid)
     }
 
     Scaffold(
@@ -105,7 +111,7 @@ private fun AuthorizedApp(
                     hasRecordPermission = hasPermission,
                     onSignOut = onSignOut,
                     onSaveRecording = { filePath ->
-                        viewModel.saveRecording(
+                        mainViewModel.saveRecording(
                             filePath = filePath,
                             userId = user.uid
                         )
@@ -114,12 +120,25 @@ private fun AuthorizedApp(
             }
 
             composable(AppScreen.History.route) {
-                val uiState by viewModel.uiState.collectAsState()
+                val uiState by mainViewModel.uiState.collectAsState()
 
                 HistoryScreen(
                     uiState = uiState,
                     onSignOut = onSignOut,
-                    viewModel = viewModel
+                    viewModel = mainViewModel,
+                    confirmDelete = appSettings.confirmDelete,
+                    defaultSort = appSettings.defaultHistorySort
+                )
+            }
+
+            composable(AppScreen.Settings.route) {
+                SettingsScreen(
+                    user = user,
+                    settings = appSettings,
+                    onThemeModeSelected = settingsViewModel::updateThemeMode,
+                    onConfirmDeleteChanged = settingsViewModel::updateConfirmDelete,
+                    onDefaultSortChanged = settingsViewModel::updateDefaultHistorySort,
+                    onSignOut = onSignOut
                 )
             }
         }
@@ -152,9 +171,7 @@ private fun BottomBar(
                         contentDescription = screen.title
                     )
                 },
-                label = {
-                    Text(screen.title)
-                }
+                label = { Text(screen.title) }
             )
         }
     }
