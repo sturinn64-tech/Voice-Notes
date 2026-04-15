@@ -109,7 +109,6 @@ private fun AuthorizedApp(
                 MainScreen(
                     user = user,
                     hasRecordPermission = hasPermission,
-                    onSignOut = onSignOut,
                     onSaveRecording = { filePath ->
                         mainViewModel.saveRecording(
                             filePath = filePath,
@@ -124,7 +123,6 @@ private fun AuthorizedApp(
 
                 HistoryScreen(
                     uiState = uiState,
-                    onSignOut = onSignOut,
                     viewModel = mainViewModel,
                     confirmDelete = appSettings.confirmDelete,
                     defaultSort = appSettings.defaultHistorySort
@@ -133,11 +131,14 @@ private fun AuthorizedApp(
 
             composable(AppScreen.Settings.route) {
                 SettingsScreen(
-                    user = user,
-                    settings = appSettings,
-                    onThemeModeSelected = settingsViewModel::updateThemeMode,
-                    onConfirmDeleteChanged = settingsViewModel::updateConfirmDelete,
-                    onDefaultSortChanged = settingsViewModel::updateDefaultHistorySort,
+                    userEmail = user.email.orEmpty(),
+                    themeMode = appSettings.themeMode,
+                    confirmDelete = appSettings.confirmDelete,
+                    defaultSort = appSettings.defaultHistorySort,
+                    appVersion = "1.0",
+                    onThemeModeChange = { settingsViewModel.updateThemeMode(it) },
+                    onConfirmDeleteChange = { settingsViewModel.updateConfirmDelete(it) },
+                    onDefaultSortChange = { settingsViewModel.updateDefaultHistorySort(it) },
                     onSignOut = onSignOut
                 )
             }

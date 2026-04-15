@@ -68,9 +68,7 @@ class MainViewModel(
                 val file = File(filePath)
 
                 if (!file.exists()) {
-                    _uiState.update {
-                        MainUiState.Error("Файл записи не найден")
-                    }
+                    _uiState.update { MainUiState.Error("Файл записи не найден") }
                     return@launch
                 }
 
@@ -122,8 +120,69 @@ class MainViewModel(
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                _uiState.update { MainUiState.Error(e.message ?: "Save failed") }
+            }
+        }
+    }
+
+    fun retryTranscription(message: AudioMessage) {
+        if (message.id == 0L) return
+
+        viewModelScope.launch {
+            try {
+                val appContext = getApplication<Application>()
+                val file = File(message.filePath)
+
+                if (!file.exists()) {
+                    withContext(Dispatchers.IO) {
+                        repository.updateTranscriptionState(
+                            messageId = message.id,
+                            transcript = "",
+                            status = TranscriptionStatus.ERROR,
+                            error = "Файл записи не найден"
+                        )
+                    }
+                    return@launch
+                }
+
+                withContext(Dispatchers.IO) {
+                    repository.updateTranscriptionState(
+                        messageId = message.id,
+                        transcript = "",
+                        status = TranscriptionStatus.PROCESSING,
+                        error = null
+                    )
+                }
+
+                val transcriptionResult = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val vosk = VoskTranscriptionService.get(appContext)
+                        vosk.transcribeWav(file).trim()
+                    }
+                }
+
+                withContext(Dispatchers.IO) {
+                    if (transcriptionResult.isSuccess) {
+                        repository.updateTranscriptionState(
+                            messageId = message.id,
+                            transcript = transcriptionResult.getOrNull().orEmpty(),
+                            status = TranscriptionStatus.COMPLETED,
+                            error = null
+                        )
+                    } else {
+                        repository.updateTranscriptionState(
+                            messageId = message.id,
+                            transcript = "",
+                            status = TranscriptionStatus.ERROR,
+                            error = transcriptionResult.exceptionOrNull()?.message
+                                ?: "Неизвестная ошибка распознавания"
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
                 _uiState.update {
-                    MainUiState.Error(e.message ?: "Save failed")
+                    MainUiState.Error(e.message ?: "Не удалось повторить распознавание")
                 }
             }
         }

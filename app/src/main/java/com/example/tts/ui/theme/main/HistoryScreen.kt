@@ -9,16 +9,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -51,8 +54,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +67,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -68,7 +75,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.example.tts.data.model.AudioMessage
+import com.example.tts.data.model.TranscriptionStatus
 import com.example.tts.data.settings.HistorySortOption
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -78,12 +88,12 @@ import java.util.Locale
 @Composable
 fun HistoryScreen(
     uiState: MainUiState,
-    onSignOut: () -> Unit,
     viewModel: MainViewModel,
     confirmDelete: Boolean,
     defaultSort: HistorySortOption
 ) {
     val context = LocalContext.current
+    val listState = rememberLazyListState()
 
     var pendingDelete by remember { mutableStateOf<AudioMessage?>(null) }
     var pendingEdit by remember { mutableStateOf<AudioMessage?>(null) }
@@ -136,15 +146,7 @@ fun HistoryScreen(
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text("История") },
-                actions = {
-                    IconButton(onClick = onSignOut) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ExitToApp,
-                            contentDescription = "Выйти"
-                        )
-                    }
-                }
+                title = { Text("История") }
             )
         }
     ) { padding ->
@@ -182,6 +184,16 @@ fun HistoryScreen(
                 }
 
                 is MainUiState.Success -> {
+                    var fileExistenceMap by remember { mutableStateOf<Map<Long, Boolean>>(emptyMap()) }
+
+                    LaunchedEffect(uiState.messages) {
+                        fileExistenceMap = withContext(Dispatchers.IO) {
+                            uiState.messages.associate { message ->
+                                message.id to File(message.filePath).exists()
+                            }
+                        }
+                    }
+
                     val filteredMessages by remember(
                         uiState.messages,
                         searchQuery,
@@ -193,7 +205,6 @@ fun HistoryScreen(
 
                             val filtered = uiState.messages.filter { message ->
                                 val matchesFavorite = !favoritesOnly || message.isFavorite
-
                                 val searchableText = buildString {
                                     append(message.title)
                                     append(" ")
@@ -201,7 +212,6 @@ fun HistoryScreen(
                                     append(" ")
                                     append(message.transcript)
                                 }
-
                                 val matchesQuery = normalizedQuery.isBlank() ||
                                         searchableText.contains(normalizedQuery, ignoreCase = true)
 
@@ -231,194 +241,220 @@ fun HistoryScreen(
                         }
                     }
 
-                    Column(
+                    LazyColumn(
+                        state = listState,
                         modifier = Modifier
                             .fillMaxSize()
-                            .imePadding()
-                            .navigationBarsPadding()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                            .imePadding(),
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 12.dp,
+                            bottom = 12.dp
+                        ),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .widthIn(max = 700.dp),
-                            shape = RoundedCornerShape(28.dp),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            )
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(18.dp),
-                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer
-                                ) {
-                                    Text(
-                                        text = "Поиск и фильтры",
-                                        modifier = Modifier.padding(
-                                            horizontal = 12.dp,
-                                            vertical = 8.dp
-                                        ),
-                                        style = MaterialTheme.typography.labelLarge
-                                    )
-                                }
-
-                                OutlinedTextField(
-                                    value = searchQuery,
-                                    onValueChange = { searchQuery = it },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(18.dp),
-                                    singleLine = true,
-                                    label = { Text("Поиск") },
-                                    placeholder = { Text("По названию и тексту") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Filled.Search,
-                                            contentDescription = null
-                                        )
-                                    },
-                                    keyboardOptions = KeyboardOptions(
-                                        keyboardType = KeyboardType.Text
-                                    )
-                                )
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.weight(1f),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "Только избранное",
-                                            modifier = Modifier.weight(1f),
-                                            style = MaterialTheme.typography.bodyMedium
-                                        )
-                                        Switch(
-                                            checked = favoritesOnly,
-                                            onCheckedChange = { favoritesOnly = it }
-                                        )
-                                    }
-
-                                    Box {
-                                        OutlinedButton(
-                                            onClick = { sortMenuExpanded = true },
-                                            shape = RoundedCornerShape(16.dp)
-                                        ) {
-                                            Text(selectedSort.title)
-                                        }
-
-                                        DropdownMenu(
-                                            expanded = sortMenuExpanded,
-                                            onDismissRequest = { sortMenuExpanded = false }
-                                        ) {
-                                            HistorySortOption.entries.forEach { sort ->
-                                                DropdownMenuItem(
-                                                    text = { Text(sort.title) },
-                                                    onClick = {
-                                                        selectedSort = sort
-                                                        sortMenuExpanded = false
-                                                    }
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outlineVariant
-                                )
-
-                                Text(
-                                    text = "Найдено записей: ${filteredMessages.size}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                HistoryFiltersCard(
+                                    searchQuery = searchQuery,
+                                    onSearchQueryChange = { searchQuery = it },
+                                    favoritesOnly = favoritesOnly,
+                                    onFavoritesOnlyChange = { favoritesOnly = it },
+                                    selectedSort = selectedSort,
+                                    sortMenuExpanded = sortMenuExpanded,
+                                    onSortMenuExpandedChange = { sortMenuExpanded = it },
+                                    onSortSelected = { selectedSort = it },
+                                    resultCount = filteredMessages.size
                                 )
                             }
                         }
 
                         when {
                             uiState.messages.isEmpty() -> {
-                                EmptyHistoryState(
-                                    text = "Записей пока нет"
-                                )
+                                item {
+                                    EmptyHistoryState(
+                                        text = "Записей пока нет"
+                                    )
+                                }
                             }
 
                             filteredMessages.isEmpty() -> {
-                                EmptyHistoryState(
-                                    text = "Ничего не найдено по текущим фильтрам"
-                                )
+                                item {
+                                    EmptyHistoryState(
+                                        text = "Ничего не найдено по текущим фильтрам"
+                                    )
+                                }
                             }
 
                             else -> {
-                                LazyColumn(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .weight(1f)
-                                        .widthIn(max = 700.dp),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    items(
-                                        items = filteredMessages,
-                                        key = { it.id }
-                                    ) { msg ->
-                                        val fileExists = File(msg.filePath).exists()
-                                        val isPlaying = viewModel.isPlaying(msg.filePath)
+                                items(
+                                    items = filteredMessages,
+                                    key = { it.id }
+                                ) { msg ->
+                                    val fileExists = fileExistenceMap[msg.id] == true
+                                    val isPlaying = viewModel.isPlaying(msg.filePath)
 
-                                        RecordingCard(
-                                            message = msg,
-                                            fileExists = fileExists,
-                                            isPlaying = isPlaying,
-                                            onPlay = { viewModel.playRecording(msg.filePath) },
-                                            onStop = { viewModel.stopCurrentPlayback() },
-                                            onDelete = {
-                                                if (confirmDelete) {
-                                                    pendingDelete = msg
-                                                } else {
-                                                    viewModel.deleteRecording(msg)
-                                                }
-                                            },
-                                            onEdit = { pendingEdit = msg },
-                                            onToggleFavorite = { viewModel.toggleFavorite(msg) },
-                                            onCopyTranscript = {
-                                                copyTranscript(
-                                                    context = context,
-                                                    text = msg.transcript.ifBlank {
-                                                        "Транскрипт пустой"
-                                                    }
-                                                )
-                                            },
-                                            onShareTranscript = {
-                                                shareText(
-                                                    context = context,
-                                                    title = msg.title.ifBlank { msg.fileName },
-                                                    text = msg.transcript.ifBlank {
-                                                        "Транскрипт пустой"
-                                                    }
-                                                )
-                                            },
-                                            onShareAudio = {
-                                                shareAudio(
-                                                    context = context,
-                                                    filePath = msg.filePath,
-                                                    title = msg.title.ifBlank { msg.fileName }
-                                                )
+                                    RecordingCard(
+                                        message = msg,
+                                        fileExists = fileExists,
+                                        isPlaying = isPlaying,
+                                        onPlay = { viewModel.playRecording(msg.filePath) },
+                                        onStop = { viewModel.stopCurrentPlayback() },
+                                        onDelete = {
+                                            if (confirmDelete) {
+                                                pendingDelete = msg
+                                            } else {
+                                                viewModel.deleteRecording(msg)
                                             }
-                                        )
-                                    }
+                                        },
+                                        onEdit = { pendingEdit = msg },
+                                        onToggleFavorite = { viewModel.toggleFavorite(msg) },
+                                        onCopyTranscript = {
+                                            copyTranscript(
+                                                context = context,
+                                                text = msg.transcript.ifBlank { "Транскрипт пустой" }
+                                            )
+                                        },
+                                        onShareTranscript = {
+                                            shareText(
+                                                context = context,
+                                                title = msg.title.ifBlank { msg.fileName },
+                                                text = msg.transcript.ifBlank { "Транскрипт пустой" }
+                                            )
+                                        },
+                                        onShareAudio = {
+                                            shareAudio(
+                                                context = context,
+                                                filePath = msg.filePath,
+                                                title = msg.title.ifBlank { msg.fileName }
+                                            )
+                                        },
+                                        onRetryTranscription = { viewModel.retryTranscription(msg) }
+                                    )
                                 }
                             }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+
+@Composable
+private fun HistoryFiltersCard(
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    favoritesOnly: Boolean,
+    onFavoritesOnlyChange: (Boolean) -> Unit,
+    selectedSort: HistorySortOption,
+    sortMenuExpanded: Boolean,
+    onSortMenuExpandedChange: (Boolean) -> Unit,
+    onSortSelected: (HistorySortOption) -> Unit,
+    resultCount: Int
+) {
+    val cardShape = RoundedCornerShape(24.dp)
+    val searchShape = RoundedCornerShape(20.dp)
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .widthIn(max = 700.dp),
+        shape = cardShape,
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 0.dp,
+        tonalElevation = 0.dp,
+        border = null
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            TextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(searchShape),
+                shape = searchShape,
+                singleLine = true,
+                placeholder = { Text("Поиск") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = null
+                    )
+                },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    errorContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+
+                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    disabledIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    errorIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                )
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Только избранное",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Switch(
+                        checked = favoritesOnly,
+                        onCheckedChange = onFavoritesOnlyChange
+                    )
+                }
+
+                Box {
+                    OutlinedButton(
+                        onClick = { onSortMenuExpandedChange(true) },
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text(selectedSort.title)
+                    }
+
+                    DropdownMenu(
+                        expanded = sortMenuExpanded,
+                        onDismissRequest = { onSortMenuExpandedChange(false) }
+                    ) {
+                        HistorySortOption.entries.forEach { sort ->
+                            DropdownMenuItem(
+                                text = { Text(sort.title) },
+                                onClick = {
+                                    onSortSelected(sort)
+                                    onSortMenuExpandedChange(false)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            Text(
+                text = "Найдено записей: $resultCount",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -520,12 +556,15 @@ private fun RecordingCard(
     onToggleFavorite: () -> Unit,
     onCopyTranscript: () -> Unit,
     onShareTranscript: () -> Unit,
-    onShareAudio: () -> Unit
+    onShareAudio: () -> Unit,
+    onRetryTranscription: () -> Unit
 ) {
     var shareMenuExpanded by remember(message.id) { mutableStateOf(false) }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .widthIn(max = 700.dp),
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
         colors = CardDefaults.cardColors(
@@ -561,6 +600,23 @@ private fun RecordingCard(
                             isAccent = false
                         )
 
+                        if (message.durationMs > 0) {
+                            StatusPill(
+                                text = formatDuration(message.durationMs),
+                                isAccent = false
+                            )
+                        }
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TranscriptionStatusPill(
+                            status = message.transcriptionStatus,
+                            error = message.transcriptionError
+                        )
+
                         if (message.isFavorite) {
                             StatusPill(
                                 text = "Избранное",
@@ -592,9 +648,23 @@ private fun RecordingCard(
             }
 
             Text(
-                text = message.transcript.ifBlank { "Транскрипт пока пустой" },
+                text = when (message.transcriptionStatus) {
+                    TranscriptionStatus.PROCESSING -> "Идет распознавание..."
+                    TranscriptionStatus.ERROR -> {
+                        message.transcriptionError
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { "Ошибка распознавания: $it" }
+                            ?: "Ошибка распознавания"
+                    }
+                    TranscriptionStatus.COMPLETED -> {
+                        message.transcript.ifBlank { "Транскрипт пока пустой" }
+                    }
+                },
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = when (message.transcriptionStatus) {
+                    TranscriptionStatus.ERROR -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis
             )
@@ -680,6 +750,24 @@ private fun RecordingCard(
                     )
                 }
 
+                if (message.transcriptionStatus == TranscriptionStatus.ERROR) {
+                    IconButton(onClick = onRetryTranscription) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = "Повторить распознавание"
+                        )
+                    }
+                }
+
+                if (message.transcriptionStatus == TranscriptionStatus.PROCESSING) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp)
+                            .width(18.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+
                 IconButton(onClick = onDelete) {
                     Icon(
                         imageVector = Icons.Filled.Delete,
@@ -754,7 +842,6 @@ private fun shareAudio(
 ) {
     try {
         val file = File(filePath)
-
         if (!file.exists()) {
             Toast.makeText(context, "Аудиофайл не найден", Toast.LENGTH_SHORT).show()
             return
@@ -786,4 +873,56 @@ private fun shareAudio(
 private fun formatDate(timestamp: Long): String {
     val formatter = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
     return formatter.format(Date(timestamp))
+}
+
+@Composable
+private fun TranscriptionStatusPill(
+    status: TranscriptionStatus,
+    error: String?
+) {
+    val background = when (status) {
+        TranscriptionStatus.PROCESSING -> MaterialTheme.colorScheme.secondaryContainer
+        TranscriptionStatus.COMPLETED -> MaterialTheme.colorScheme.tertiaryContainer
+        TranscriptionStatus.ERROR -> MaterialTheme.colorScheme.errorContainer
+    }
+
+    val contentColor = when (status) {
+        TranscriptionStatus.PROCESSING -> MaterialTheme.colorScheme.onSecondaryContainer
+        TranscriptionStatus.COMPLETED -> MaterialTheme.colorScheme.onTertiaryContainer
+        TranscriptionStatus.ERROR -> MaterialTheme.colorScheme.onErrorContainer
+    }
+
+    val text = when (status) {
+        TranscriptionStatus.PROCESSING -> "Распознается"
+        TranscriptionStatus.COMPLETED -> "Готово"
+        TranscriptionStatus.ERROR -> {
+            if (error.isNullOrBlank()) "Ошибка"
+            else "Ошибка"
+        }
+    }
+
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = background
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = contentColor
+        )
+    }
+}
+
+private fun formatDuration(durationMs: Long): String {
+    val totalSeconds = (durationMs / 1000).coerceAtLeast(0L)
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+
+    return if (hours > 0) {
+        String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
+    }
 }

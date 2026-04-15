@@ -53,7 +53,6 @@ import com.google.firebase.auth.FirebaseUser
 fun MainScreen(
     user: FirebaseUser,
     hasRecordPermission: Boolean,
-    onSignOut: () -> Unit,
     onSaveRecording: (filePath: String) -> Unit
 ) {
     val context = LocalContext.current
@@ -77,15 +76,7 @@ fun MainScreen(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Запись") },
-                actions = {
-                    IconButton(onClick = onSignOut) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ExitToApp,
-                            contentDescription = "Выйти"
-                        )
-                    }
-                }
+                title = { Text("Запись") }
             )
         }
     ) { padding ->
