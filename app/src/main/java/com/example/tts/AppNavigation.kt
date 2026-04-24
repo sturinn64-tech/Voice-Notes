@@ -32,6 +32,7 @@ import com.example.tts.navigation.AppScreen
 import com.example.tts.navigation.bottomBarScreens
 import com.example.tts.ui.theme.login.LoginScreen
 import com.example.tts.ui.theme.main.HistoryScreen
+import com.example.tts.ui.theme.main.HistoryViewModel
 import com.example.tts.ui.theme.main.MainScreen
 import com.example.tts.ui.theme.main.MainViewModel
 import com.example.tts.ui.theme.settings.SettingsScreen
@@ -80,15 +81,15 @@ private fun AuthorizedApp(
     val context = LocalContext.current
     val application = context.applicationContext as Application
 
+    val historyViewModel: HistoryViewModel = viewModel(
+        factory = HistoryViewModel.provideFactory(application)
+    )
+
     val mainViewModel: MainViewModel = viewModel(
         factory = MainViewModel.provideFactory(application)
     )
 
     val navController = rememberNavController()
-
-    LaunchedEffect(user.uid) {
-        mainViewModel.loadMessages(user.uid)
-    }
 
     Scaffold(
         bottomBar = {
@@ -106,26 +107,43 @@ private fun AuthorizedApp(
                     Manifest.permission.RECORD_AUDIO
                 ) == PackageManager.PERMISSION_GRANTED
 
+                val mainUiState by mainViewModel.uiState.collectAsState()
+
                 MainScreen(
-                    user = user,
+                    uiState = mainUiState,
                     hasRecordPermission = hasPermission,
                     onSaveRecording = { filePath ->
                         mainViewModel.saveRecording(
                             filePath = filePath,
                             userId = user.uid
                         )
-                    }
+                    },
+                    onClearError = mainViewModel::clearError,
+                    onClearInfo = mainViewModel::clearInfo
                 )
             }
 
             composable(AppScreen.History.route) {
-                val uiState by mainViewModel.uiState.collectAsState()
+                LaunchedEffect(user.uid) {
+                    historyViewModel.loadMessages(user.uid)
+                }
+
+                val historyUiState by historyViewModel.uiState.collectAsState()
 
                 HistoryScreen(
-                    uiState = uiState,
-                    viewModel = mainViewModel,
-                    confirmDelete = appSettings.confirmDelete,
-                    defaultSort = appSettings.defaultHistorySort
+                    uiState = historyUiState,
+                    onSearchQueryChange = historyViewModel::updateSearchQuery,
+                    onSortChange = historyViewModel::updateSortOption,
+                    onToggleFavoritesOnly = historyViewModel::toggleFavoritesOnly,
+                    onPlayClick = historyViewModel::playOrStop,
+                    onDeleteClick = historyViewModel::deleteRecording,
+                    onFavoriteClick = historyViewModel::toggleFavorite,
+                    onUpdateMessage = historyViewModel::updateMessage,
+                    onRetryTranscription = historyViewModel::retryTranscription,
+                    onExportTextClick = historyViewModel::exportText,
+                    onExportAudioClick = historyViewModel::exportAudio,
+                    onClearError = historyViewModel::clearError,
+                    onClearInfo = historyViewModel::clearInfo
                 )
             }
 

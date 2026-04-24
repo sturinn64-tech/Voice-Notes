@@ -1,48 +1,33 @@
 package com.example.tts.ui.theme.settings
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
-import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,16 +35,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.tts.data.settings.AppThemeMode
 import com.example.tts.data.settings.HistorySortOption
+import com.example.tts.ui.components.AppPillToggleButton
+import com.example.tts.ui.components.AppScreenTopBar
+import com.example.tts.ui.components.AppSectionCard
+import com.example.tts.ui.components.AppSectionTitle
 
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     userEmail: String,
@@ -70,29 +56,13 @@ fun SettingsScreen(
     onThemeModeChange: (AppThemeMode) -> Unit,
     onConfirmDeleteChange: (Boolean) -> Unit,
     onDefaultSortChange: (HistorySortOption) -> Unit,
-    onSignOut: () -> Unit,
-    modifier: Modifier = Modifier
+    onSignOut: () -> Unit
 ) {
     var showAboutDialog by remember { mutableStateOf(false) }
-    var showThemeDialog by remember { mutableStateOf(false) }
-    var showSortDialog by remember { mutableStateOf(false) }
 
     Scaffold(
-        modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Настройки",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
+            AppScreenTopBar(title = "Настройки")
         }
     ) { innerPadding ->
         Column(
@@ -100,182 +70,212 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 16.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            SettingsSectionCard(
-                title = "Аккаунт"
-            ) {
-                SettingsInfoRow(
-                    icon = Icons.Filled.AccountCircle,
-                    title = "Email",
-                    subtitle = userEmail.ifBlank { "Почта не найдена" }
+            AppSectionCard {
+                AppSectionTitle(
+                    title = "Аккаунт",
+                    subtitle = "Данные текущего пользователя"
                 )
 
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 12.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SettingsInfoRow(
+                        icon = Icons.Filled.Email,
+                        title = "Email",
+                        subtitle = userEmail.ifBlank { "Email не указан" }
+                    )
 
-                SettingsActionRow(
-                    icon = Icons.AutoMirrored.Filled.ExitToApp,
-                    title = "Выйти из аккаунта",
-                    subtitle = "Завершить текущую сессию",
-                    onClick = onSignOut,
-                    isDanger = true
-                )
+                    FilledTonalButton(
+                        onClick = onSignOut,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        ),
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Logout,
+                            contentDescription = null
+                        )
+                        Text(
+                            text = "Выйти из аккаунта",
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
+                }
             }
 
-            SettingsSectionCard(
-                title = "Поведение приложения"
-            ) {
-                SettingsActionWithButtonRow(
-                    icon = Icons.Filled.Palette,
-                    title = "Тема",
-                    subtitle = themeMode.toDisplayName(),
-                    buttonText = "Изменить",
-                    onClick = { showThemeDialog = true }
+            AppSectionCard {
+                AppSectionTitle(
+                    title = "Внешний вид",
+                    subtitle = "Оформление приложения"
                 )
 
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 12.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SettingsInfoRow(
+                        icon = Icons.Filled.Palette,
+                        title = "Тема",
+                        subtitle = when (themeMode) {
+                            AppThemeMode.SYSTEM -> "Системная"
+                            AppThemeMode.LIGHT -> "Светлая"
+                            AppThemeMode.DARK -> "Тёмная"
+                        }
+                    )
 
-                SettingsSwitchRow(
-                    icon = Icons.Filled.Delete,
-                    title = "Подтверждение удаления",
-                    subtitle = "Показывать диалог перед удалением записи",
-                    checked = confirmDelete,
-                    onCheckedChange = onConfirmDeleteChange
-                )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AppPillToggleButton(
+                            text = "Системная",
+                            selected = themeMode == AppThemeMode.SYSTEM,
+                            onClick = { onThemeModeChange(AppThemeMode.SYSTEM) }
+                        )
 
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 12.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
+                        AppPillToggleButton(
+                            text = "Светлая",
+                            selected = themeMode == AppThemeMode.LIGHT,
+                            onClick = { onThemeModeChange(AppThemeMode.LIGHT) }
+                        )
 
-                SettingsActionWithButtonRow(
-                    icon = Icons.Filled.Sort,
-                    title = "Сортировка истории",
-                    subtitle = defaultSort.toDisplayName(),
-                    buttonText = "Изменить",
-                    onClick = { showSortDialog = true }
-                )
+                        AppPillToggleButton(
+                            text = "Тёмная",
+                            selected = themeMode == AppThemeMode.DARK,
+                            onClick = { onThemeModeChange(AppThemeMode.DARK) }
+                        )
+                    }
+                }
             }
 
-            SettingsSectionCard(
-                title = "О приложении"
-            ) {
-                SettingsActionRow(
-                    icon = Icons.Filled.Info,
-                    title = "Информация",
-                    subtitle = "Описание приложения, функции и версия",
-                    onClick = { showAboutDialog = true }
+            AppSectionCard {
+                AppSectionTitle(
+                    title = "История",
+                    subtitle = "Поведение записей и списка заметок"
                 )
+
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SettingsSwitchRow(
+                        icon = Icons.Filled.Delete,
+                        title = "Подтверждение удаления",
+                        subtitle = "Показывать диалог перед удалением записи",
+                        checked = confirmDelete,
+                        onCheckedChange = onConfirmDeleteChange
+                    )
+
+                    SettingsInfoRow(
+                        icon = Icons.Filled.Sort,
+                        title = "Сортировка по умолчанию",
+                        subtitle = when (defaultSort) {
+                            HistorySortOption.NEWEST -> "Сначала новые"
+                            HistorySortOption.OLDEST -> "Сначала старые"
+                            HistorySortOption.TITLE -> "По названию"
+                        }
+                    )
+
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AppPillToggleButton(
+                            text = "Новые",
+                            selected = defaultSort == HistorySortOption.NEWEST,
+                            onClick = { onDefaultSortChange(HistorySortOption.NEWEST) }
+                        )
+
+                        AppPillToggleButton(
+                            text = "Старые",
+                            selected = defaultSort == HistorySortOption.OLDEST,
+                            onClick = { onDefaultSortChange(HistorySortOption.OLDEST) }
+                        )
+
+                        AppPillToggleButton(
+                            text = "Название",
+                            selected = defaultSort == HistorySortOption.TITLE,
+                            onClick = { onDefaultSortChange(HistorySortOption.TITLE) }
+                        )
+                    }
+                }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            AppSectionCard {
+                AppSectionTitle(
+                    title = "О приложении",
+                    subtitle = "Информация и описание"
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SettingsInfoRow(
+                        icon = Icons.Filled.Info,
+                        title = "Версия",
+                        subtitle = appVersion
+                    )
+
+                    FilledTonalButton(
+                        onClick = { showAboutDialog = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Info,
+                            contentDescription = null
+                        )
+                        Text(
+                            text = "Открыть описание",
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
+                }
+            }
         }
-    }
-
-    if (showThemeDialog) {
-        ThemeModeDialog(
-            selectedMode = themeMode,
-            onDismiss = { showThemeDialog = false },
-            onThemeSelected = {
-                onThemeModeChange(it)
-                showThemeDialog = false
-            }
-        )
-    }
-
-    if (showSortDialog) {
-        SortOptionDialog(
-            selectedSort = defaultSort,
-            onDismiss = { showSortDialog = false },
-            onSortSelected = {
-                onDefaultSortChange(it)
-                showSortDialog = false
-            }
-        )
     }
 
     if (showAboutDialog) {
-        AboutAppDialog(
-            appVersion = appVersion,
-            onDismiss = { showAboutDialog = false }
-        )
-    }
-}
-
-@Composable
-private fun SettingsSectionCard(
-    title: String,
-    content: @Composable () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 6.dp
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .background(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(18.dp)
-                    )
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-            content()
-        }
-    }
-}
-
-@Composable
-private fun SettingsIconBox(
-    icon: ImageVector,
-    isDanger: Boolean = false
-) {
-    Box(
-        modifier = Modifier
-            .size(56.dp)
-            .background(
-                color = if (isDanger) {
-                    MaterialTheme.colorScheme.errorContainer
-                } else {
-                    MaterialTheme.colorScheme.secondaryContainer
-                },
-                shape = RoundedCornerShape(18.dp)
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = if (isDanger) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.primary
+        AlertDialog(
+            onDismissRequest = { showAboutDialog = false },
+            title = {
+                Text("О приложении")
             },
-            modifier = Modifier.size(28.dp)
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Voice Notes помогает быстро записывать голосовые заметки и хранить их локально на устройстве.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Text(
+                        text = "Что умеет приложение:",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Text(
+                        text = "• запись голосовых заметок\n" +
+                                "• сохранение истории записей\n" +
+                                "• сортировка и поиск\n" +
+                                "• избранное\n" +
+                                "• редактирование текста заметки\n" +
+                                "• экспорт и обмен файлами",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Text(
+                        text = "Версия: $appVersion",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { showAboutDialog = false }
+                ) {
+                    Text("Понятно")
+                }
+            }
         )
     }
 }
@@ -286,140 +286,30 @@ private fun SettingsInfoRow(
     title: String,
     subtitle: String
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        SettingsIconBox(icon = icon)
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Column(
-            modifier = Modifier.weight(1f)
+    SettingsRowContainer {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            SettingsLeadingIcon(icon = icon)
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall
+                )
 
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun SettingsActionRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-    isDanger: Boolean = false
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                color = if (isDanger) {
-                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
-                } else {
-                    Color.Transparent
-                },
-                shape = RoundedCornerShape(18.dp)
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        SettingsIconBox(
-            icon = icon,
-            isDanger = isDanger
-        )
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
-                color = if (isDanger) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                }
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun SettingsActionWithButtonRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    buttonText: String,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        SettingsIconBox(icon = icon)
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        OutlinedButton(
-            onClick = onClick,
-            shape = RoundedCornerShape(22.dp),
-            modifier = Modifier.height(48.dp),
-            border = BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.outlineVariant
-            )
-        ) {
-            Text(
-                text = buttonText,
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium
-            )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -432,186 +322,75 @@ private fun SettingsSwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        SettingsIconBox(icon = icon)
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Column(
-            modifier = Modifier.weight(1f)
+    SettingsRowContainer {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            SettingsLeadingIcon(icon = icon)
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = MaterialTheme.colorScheme.surface,
-                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
-                uncheckedThumbColor = MaterialTheme.colorScheme.surface,
-                uncheckedTrackColor = MaterialTheme.colorScheme.outlineVariant,
-                checkedBorderColor = Color.Transparent,
-                uncheckedBorderColor = Color.Transparent
-            )
-        )
-    }
-}
-
-@Composable
-private fun ThemeModeDialog(
-    selectedMode: AppThemeMode,
-    onDismiss: () -> Unit,
-    onThemeSelected: (AppThemeMode) -> Unit
-) {
-    val options = listOf(
-        AppThemeMode.SYSTEM,
-        AppThemeMode.LIGHT,
-        AppThemeMode.DARK
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Тема приложения") },
-        text = {
-            Column {
-                options.forEach { mode ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onThemeSelected(mode) }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = selectedMode == mode,
-                            onClick = { onThemeSelected(mode) }
-                        )
-                        Text(text = mode.toDisplayName())
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Закрыть")
-            }
-        }
-    )
-}
-
-@Composable
-private fun SortOptionDialog(
-    selectedSort: HistorySortOption,
-    onDismiss: () -> Unit,
-    onSortSelected: (HistorySortOption) -> Unit
-) {
-    val options = listOf(
-        HistorySortOption.NEWEST,
-        HistorySortOption.OLDEST,
-        HistorySortOption.TITLE
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Сортировка истории") },
-        text = {
-            Column {
-                options.forEach { option ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSortSelected(option) }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = selectedSort == option,
-                            onClick = { onSortSelected(option) }
-                        )
-                        Text(text = option.toDisplayName())
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Закрыть")
-            }
-        }
-    )
-}
-
-@Composable
-private fun AboutAppDialog(
-    appVersion: String,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text("О приложении")
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp, end = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 Text(
-                    text = "Voice Notes — приложение для записи, хранения и организации голосовых заметок."
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall
                 )
+
                 Text(
-                    text = "Основные возможности:"
-                )
-                Text(
-                    text = "• запись аудио\n" +
-                            "• локальное хранение записей\n" +
-                            "• история записей\n" +
-                            "• поиск и сортировка\n" +
-                            "• избранное и редактирование\n" +
-                            "• офлайн-транскрибация"
-                )
-                Text(
-                    text = "Версия: $appVersion",
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Понятно")
-            }
-        }
-    )
-}
 
-private fun AppThemeMode.toDisplayName(): String {
-    return when (this) {
-        AppThemeMode.SYSTEM -> "Как в системе"
-        AppThemeMode.LIGHT -> "Светлая"
-        AppThemeMode.DARK -> "Тёмная"
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange
+            )
+        }
     }
 }
 
-private fun HistorySortOption.toDisplayName(): String {
-    return when (this) {
-        HistorySortOption.NEWEST -> "Сначала новые"
-        HistorySortOption.OLDEST -> "Сначала старые"
-        HistorySortOption.TITLE -> "По названию"
+@Composable
+private fun SettingsRowContainer(
+    content: @Composable () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp)
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SettingsLeadingIcon(
+    icon: ImageVector
+) {
+    Surface(
+        modifier = Modifier.size(48.dp),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
     }
 }

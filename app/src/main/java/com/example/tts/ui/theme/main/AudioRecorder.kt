@@ -7,24 +7,22 @@ import android.media.MediaRecorder
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -32,6 +30,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import com.example.tts.ui.components.AppSectionCard
+import com.example.tts.ui.components.AppSectionTitle
+import com.example.tts.ui.components.AppStatusBadge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -41,62 +43,97 @@ import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.util.concurrent.atomic.AtomicBoolean
 
+private enum class RecorderPhase {
+    IDLE,
+    RECORDING,
+    SAVING
+}
+
 @Composable
 fun AudioRecorder(
     onSaveRecording: (filePath: String) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    var isRecording by remember { mutableStateOf(false) }
+    var phase by remember { mutableStateOf(RecorderPhase.IDLE) }
     var currentFile by remember { mutableStateOf<File?>(null) }
     var recordThread by remember { mutableStateOf<Thread?>(null) }
-    var startedAt by remember { mutableStateOf(0L) }
-    var elapsedText by remember { mutableStateOf("00:00") }
+    var startedAt by remember { mutableLongStateOf(0L) }
+    var elapsedMs by remember { mutableLongStateOf(0L) }
 
     val stopFlag = remember { AtomicBoolean(false) }
 
-    LaunchedEffect(isRecording, startedAt) {
-        if (!isRecording) {
-            elapsedText = "00:00"
-            return@LaunchedEffect
-        }
+    val isRecording = phase == RecorderPhase.RECORDING
+    val isSaving = phase == RecorderPhase.SAVING
 
+    LaunchedEffect(isRecording, startedAt) {
         while (isRecording) {
-            val elapsed = System.currentTimeMillis() - startedAt
-            elapsedText = formatElapsed(elapsed)
-            delay(500)
+            elapsedMs = System.currentTimeMillis() - startedAt
+            delay(200L)
+        }
+    }
+
+    fun showError(message: String) {
+        scope.launch {
+            snackbarHostState.showSnackbar(
+                message = message,
+                duration = SnackbarDuration.Short
+            )
         }
     }
 
     fun startRecording() {
-        if (isRecording) return
+        if (isRecording || isSaving) return
 
-        stopFlag.set(false)
+        try {
+            val recordsDir = File(context.filesDir, "audio_records").apply {
+                if (!exists()) mkdirs()
+            }
 
-        val recordsDir = File(context.filesDir, "audio_records").apply {
-            if (!exists()) mkdirs()
+            val file = File(recordsDir, "rec_${System.currentTimeMillis()}.wav")
+            currentFile = file
+            stopFlag.set(false)
+            elapsedMs = 0L
+            startedAt = System.currentTimeMillis()
+
+            val thread = Thread {
+                try {
+                    recordWavToFile(file, stopFlag)
+                } catch (e: Exception) {
+                    scope.launch {
+                        phase = RecorderPhase.IDLE
+                        currentFile = null
+                        recordThread = null
+                        elapsedMs = 0L
+                        startedAt = 0L
+                        showError(e.message ?: "Не удалось начать запись")
+                    }
+                }
+            }
+
+            recordThread = thread
+            phase = RecorderPhase.RECORDING
+            thread.start()
+        } catch (e: Exception) {
+            phase = RecorderPhase.IDLE
+            currentFile = null
+            recordThread = null
+            elapsedMs = 0L
+            startedAt = 0L
+            showError(e.message ?: "Ошибка запуска записи")
         }
-
-        val file = File(recordsDir, "rec_${System.currentTimeMillis()}.wav")
-        currentFile = file
-        startedAt = System.currentTimeMillis()
-
-        val thread = Thread {
-            recordWavToFile(file, stopFlag)
-        }
-
-        recordThread = thread
-        thread.start()
-        isRecording = true
     }
 
     fun stopRecording() {
         if (!isRecording) return
 
-        stopFlag.set(true)
         val file = currentFile
         val thread = recordThread
+
+        stopFlag.set(true)
+        phase = RecorderPhase.SAVING
 
         scope.launch {
             withContext(Dispatchers.IO) {
@@ -106,118 +143,85 @@ fun AudioRecorder(
                 }
             }
 
-            isRecording = false
             recordThread = null
+            phase = RecorderPhase.IDLE
             startedAt = 0L
+            elapsedMs = 0L
 
-            file?.let { onSaveRecording(it.absolutePath) }
+            val savedFile = file?.takeIf { it.exists() }
+            currentFile = null
+
+            if (savedFile != null) {
+                onSaveRecording(savedFile.absolutePath)
+            } else {
+                showError("Файл записи не найден после остановки")
+            }
         }
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+    Column(
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = if (isRecording) {
-                    MaterialTheme.colorScheme.errorContainer
-                } else {
-                    MaterialTheme.colorScheme.secondaryContainer
+        SnackbarHost(hostState = snackbarHostState)
+
+        AppSectionCard {
+            AppSectionTitle(
+                title = "Новая запись",
+                subtitle = when (phase) {
+                    RecorderPhase.IDLE -> "Запиши мысль, идею или короткую заметку."
+                    RecorderPhase.RECORDING -> "Идёт запись. Нажми кнопку ещё раз, чтобы остановить."
+                    RecorderPhase.SAVING -> "Сохраняем файл и подготавливаем его к распознаванию."
                 }
-            ) {
-                Text(
-                    text = if (isRecording) {
-                        "Идет запись • $elapsedText"
-                    } else {
-                        "Готово к записи"
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (isRecording) {
-                        MaterialTheme.colorScheme.onErrorContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    }
-                )
-            }
+            )
 
-            Column(
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = "Новая голосовая заметка",
-                    style = MaterialTheme.typography.headlineSmall
-                )
+            AppStatusBadge(
+                text = when (phase) {
+                    RecorderPhase.IDLE -> "Готово к записи"
+                    RecorderPhase.RECORDING -> "Запись идёт"
+                    RecorderPhase.SAVING -> "Сохранение"
+                }
+            )
 
-                Text(
-                    text = if (isRecording) {
-                        "Нажми кнопку еще раз, чтобы остановить запись и сохранить файл."
-                    } else {
-                        "Запись сохранится локально и сразу появится в истории."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text(
+                text = formatDuration(elapsedMs),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Text(
+                text = if (isRecording) {
+                    "Во время записи не закрывай экран приложения, чтобы потом не ловить тупые обрывы файла."
+                } else {
+                    "Файл сохранится локально, после чего заметка появится в истории."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             Button(
                 onClick = {
                     if (isRecording) stopRecording() else startRecording()
                 },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-                colors = if (isRecording) {
-                    ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
+                enabled = !isSaving,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Text(
+                        text = "  Сохраняем..."
                     )
                 } else {
-                    ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                }
-            ) {
-                Icon(
-                    imageVector = if (isRecording) {
-                        Icons.Filled.Stop
-                    } else {
-                        Icons.Filled.Mic
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-                Text(
-                    text = if (isRecording) "Остановить запись" else "Начать запись",
-                    modifier = Modifier.padding(start = 8.dp),
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
-
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
-            ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = "Подсказка",
-                        style = MaterialTheme.typography.titleSmall
+                    Icon(
+                        imageVector = if (isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
+                        contentDescription = null
                     )
                     Text(
-                        text = "Для лучшего качества говори ближе к микрофону и в тихом помещении.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = if (isRecording) "  Остановить запись" else "  Начать запись"
                     )
                 }
             }
@@ -225,11 +229,11 @@ fun AudioRecorder(
     }
 }
 
-private fun formatElapsed(durationMs: Long): String {
-    val totalSeconds = (durationMs / 1000).toInt()
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return String.format("%02d:%02d", minutes, seconds)
+private fun formatDuration(durationMs: Long): String {
+    val totalSeconds = durationMs / 1000L
+    val minutes = totalSeconds / 60L
+    val seconds = totalSeconds % 60L
+    return "%02d:%02d".format(minutes, seconds)
 }
 
 @SuppressLint("MissingPermission")
@@ -237,13 +241,17 @@ private fun recordWavToFile(
     outFile: File,
     stopFlag: AtomicBoolean
 ) {
-    val sampleRate = 16000
+    val sampleRate = 16_000
     val channelConfig = AudioFormat.CHANNEL_IN_MONO
     val audioFormat = AudioFormat.ENCODING_PCM_16BIT
     val channels = 1
     val bitsPerSample = 16
 
     val minBuf = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
+    if (minBuf == AudioRecord.ERROR || minBuf == AudioRecord.ERROR_BAD_VALUE) {
+        throw IllegalStateException("Не удалось определить размер буфера для записи")
+    }
+
     val bufferSize = maxOf(minBuf, 4096)
 
     val audioRecord = AudioRecord(
@@ -255,6 +263,7 @@ private fun recordWavToFile(
     )
 
     if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
+        audioRecord.release()
         throw IllegalStateException("Не удалось инициализировать AudioRecord")
     }
 
@@ -264,9 +273,9 @@ private fun recordWavToFile(
     FileOutputStream(outFile).use { fos ->
         fos.write(ByteArray(44))
 
-        audioRecord.startRecording()
-
         try {
+            audioRecord.startRecording()
+
             while (!stopFlag.get()) {
                 val read = audioRecord.read(buffer, 0, buffer.size)
                 if (read > 0) {
@@ -283,7 +292,13 @@ private fun recordWavToFile(
         }
     }
 
-    writeWavHeader(outFile, totalAudioLen, sampleRate, channels, bitsPerSample)
+    writeWavHeader(
+        file = outFile,
+        totalAudioLen = totalAudioLen,
+        sampleRate = sampleRate,
+        channels = channels,
+        bitsPerSample = bitsPerSample
+    )
 }
 
 private fun writeWavHeader(
@@ -302,10 +317,12 @@ private fun writeWavHeader(
     header[2] = 'F'.code.toByte()
     header[3] = 'F'.code.toByte()
     writeIntLE(header, 4, totalDataLen.toInt())
+
     header[8] = 'W'.code.toByte()
     header[9] = 'A'.code.toByte()
     header[10] = 'V'.code.toByte()
     header[11] = 'E'.code.toByte()
+
     header[12] = 'f'.code.toByte()
     header[13] = 'm'.code.toByte()
     header[14] = 't'.code.toByte()
@@ -317,6 +334,7 @@ private fun writeWavHeader(
     writeIntLE(header, 28, byteRate)
     writeShortLE(header, 32, (channels * bitsPerSample / 8).toShort())
     writeShortLE(header, 34, bitsPerSample.toShort())
+
     header[36] = 'd'.code.toByte()
     header[37] = 'a'.code.toByte()
     header[38] = 't'.code.toByte()

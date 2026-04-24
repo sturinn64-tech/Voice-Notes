@@ -25,6 +25,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+data class MainUiState(
+    val isSaving: Boolean = false,
+    val errorMessage: String? = null,
+    val infoMessage: String? = null
+)
+
 class MainViewModel(
     application: Application
 ) : AndroidViewModel(application) {
@@ -33,48 +39,37 @@ class MainViewModel(
         AppDatabase.getInstance(application).audioMessageDao()
     )
 
-    private val _uiState = MutableStateFlow<MainUiState>(MainUiState.Loading)
+    private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
-
-    private var mediaPlayer: MediaPlayer? = null
-    private var currentPlayingFilePath: String? = null
-    private var observeJob: Job? = null
-
-    fun loadMessages(userId: String) {
-        observeJob?.cancel()
-        observeJob = viewModelScope.launch {
-            repository.observeAudioMessagesForUser(userId)
-                .onStart {
-                    _uiState.value = MainUiState.Loading
-                }
-                .catch { e ->
-                    _uiState.value = MainUiState.Error(
-                        e.message ?: "Ошибка загрузки данных"
-                    )
-                }
-                .collectLatest { messages ->
-                    _uiState.value = MainUiState.Success(messages)
-                }
-        }
-    }
 
     fun saveRecording(
         filePath: String,
         userId: String
     ) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update {
+                it.copy(
+                    isSaving = true,
+                    errorMessage = null,
+                    infoMessage = null
+                )
+            }
+
             try {
                 val appContext = getApplication<Application>()
                 val file = File(filePath)
 
                 if (!file.exists()) {
-                    _uiState.update { MainUiState.Error("Файл записи не найден") }
+                    _uiState.update {
+                        it.copy(
+                            isSaving = false,
+                            errorMessage = "Файл записи не найден"
+                        )
+                    }
                     return@launch
                 }
 
-                val durationMs = withContext(Dispatchers.IO) {
-                    extractDurationMs(file.absolutePath)
-                }
+                val durationMs = extractDurationMs(file.absolutePath)
 
                 val draftMessage = AudioMessage(
                     userId = userId,
@@ -89,216 +84,62 @@ class MainViewModel(
                     transcriptionError = null
                 )
 
-                val messageId = withContext(Dispatchers.IO) {
-                    repository.saveAudioMessage(draftMessage)
+                val messageId = repository.saveAudioMessage(draftMessage)
+
+                val transcriptionResult = runCatching {
+                    val vosk = VoskTranscriptionService.get(appContext)
+                    vosk.transcribeWav(file).trim()
                 }
 
-                val transcriptionResult = withContext(Dispatchers.IO) {
-                    runCatching {
-                        val vosk = VoskTranscriptionService.get(appContext)
-                        vosk.transcribeWav(file).trim()
-                    }
-                }
-
-                withContext(Dispatchers.IO) {
-                    if (transcriptionResult.isSuccess) {
-                        repository.updateTranscriptionState(
-                            messageId = messageId,
-                            transcript = transcriptionResult.getOrNull().orEmpty(),
-                            status = TranscriptionStatus.COMPLETED,
-                            error = null
-                        )
-                    } else {
-                        repository.updateTranscriptionState(
-                            messageId = messageId,
-                            transcript = "",
-                            status = TranscriptionStatus.ERROR,
-                            error = transcriptionResult.exceptionOrNull()?.message
-                                ?: "Неизвестная ошибка распознавания"
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                _uiState.update { MainUiState.Error(e.message ?: "Save failed") }
-            }
-        }
-    }
-
-    fun retryTranscription(message: AudioMessage) {
-        if (message.id == 0L) return
-
-        viewModelScope.launch {
-            try {
-                val appContext = getApplication<Application>()
-                val file = File(message.filePath)
-
-                if (!file.exists()) {
-                    withContext(Dispatchers.IO) {
-                        repository.updateTranscriptionState(
-                            messageId = message.id,
-                            transcript = "",
-                            status = TranscriptionStatus.ERROR,
-                            error = "Файл записи не найден"
-                        )
-                    }
-                    return@launch
-                }
-
-                withContext(Dispatchers.IO) {
+                if (transcriptionResult.isSuccess) {
                     repository.updateTranscriptionState(
-                        messageId = message.id,
-                        transcript = "",
-                        status = TranscriptionStatus.PROCESSING,
+                        messageId = messageId,
+                        transcript = transcriptionResult.getOrNull().orEmpty(),
+                        status = TranscriptionStatus.COMPLETED,
                         error = null
                     )
-                }
 
-                val transcriptionResult = withContext(Dispatchers.IO) {
-                    runCatching {
-                        val vosk = VoskTranscriptionService.get(appContext)
-                        vosk.transcribeWav(file).trim()
-                    }
-                }
-
-                withContext(Dispatchers.IO) {
-                    if (transcriptionResult.isSuccess) {
-                        repository.updateTranscriptionState(
-                            messageId = message.id,
-                            transcript = transcriptionResult.getOrNull().orEmpty(),
-                            status = TranscriptionStatus.COMPLETED,
-                            error = null
+                    _uiState.update {
+                        it.copy(
+                            isSaving = false,
+                            infoMessage = "Запись сохранена"
                         )
-                    } else {
-                        repository.updateTranscriptionState(
-                            messageId = message.id,
-                            transcript = "",
-                            status = TranscriptionStatus.ERROR,
-                            error = transcriptionResult.exceptionOrNull()?.message
-                                ?: "Неизвестная ошибка распознавания"
+                    }
+                } else {
+                    repository.updateTranscriptionState(
+                        messageId = messageId,
+                        transcript = "",
+                        status = TranscriptionStatus.ERROR,
+                        error = transcriptionResult.exceptionOrNull()?.message
+                            ?: "Неизвестная ошибка распознавания"
+                    )
+
+                    _uiState.update {
+                        it.copy(
+                            isSaving = false,
+                            errorMessage = transcriptionResult.exceptionOrNull()?.message
+                                ?: "Не удалось распознать запись"
                         )
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 _uiState.update {
-                    MainUiState.Error(e.message ?: "Не удалось повторить распознавание")
+                    it.copy(
+                        isSaving = false,
+                        errorMessage = e.message ?: "Не удалось сохранить запись"
+                    )
                 }
             }
         }
     }
 
-    fun playRecording(filePath: String) {
-        stopCurrentPlayback()
-
-        try {
-            val file = File(filePath)
-            if (!file.exists()) return
-
-            mediaPlayer = MediaPlayer().apply {
-                setDataSource(file.absolutePath)
-                prepare()
-                start()
-                setOnCompletionListener {
-                    stopCurrentPlayback()
-                }
-            }
-
-            currentPlayingFilePath = filePath
-        } catch (e: Exception) {
-            e.printStackTrace()
-            stopCurrentPlayback()
-        }
+    fun clearError() {
+        _uiState.update { it.copy(errorMessage = null) }
     }
 
-    fun stopCurrentPlayback() {
-        mediaPlayer?.apply {
-            try {
-                if (isPlaying) stop()
-            } catch (_: Exception) {
-            }
-            release()
-        }
-
-        mediaPlayer = null
-        currentPlayingFilePath = null
-    }
-
-    fun isPlaying(filePath: String): Boolean {
-        return currentPlayingFilePath == filePath && mediaPlayer?.isPlaying == true
-    }
-
-    fun deleteRecording(message: AudioMessage) {
-        if (isPlaying(message.filePath)) {
-            stopCurrentPlayback()
-        }
-
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val file = File(message.filePath)
-                if (file.exists()) {
-                    file.delete()
-                }
-
-                repository.deleteAudioMessage(message)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                _uiState.update {
-                    MainUiState.Error(e.message ?: "Delete failed")
-                }
-            }
-        }
-    }
-
-    fun toggleFavorite(message: AudioMessage) {
-        if (message.id == 0L) return
-
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                repository.setFavorite(
-                    messageId = message.id,
-                    isFavorite = !message.isFavorite
-                )
-            } catch (e: Exception) {
-                e.printStackTrace()
-                _uiState.update {
-                    MainUiState.Error(e.message ?: "Не удалось изменить избранное")
-                }
-            }
-        }
-    }
-
-    fun updateMessage(
-        message: AudioMessage,
-        newTitle: String,
-        newTranscript: String
-    ) {
-        if (message.id == 0L) return
-
-        val safeTitle = newTitle.trim().ifBlank {
-            message.fileName.substringBeforeLast(".").ifBlank { message.fileName }
-        }
-        val safeTranscript = newTranscript.trim()
-
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                repository.updateAudioMessage(
-                    messageId = message.id,
-                    title = safeTitle,
-                    transcript = safeTranscript
-                )
-            } catch (e: Exception) {
-                e.printStackTrace()
-                _uiState.update {
-                    MainUiState.Error(e.message ?: "Не удалось обновить запись")
-                }
-            }
-        }
-    }
-
-    override fun onCleared() {
-        stopCurrentPlayback()
-        super.onCleared()
+    fun clearInfo() {
+        _uiState.update { it.copy(infoMessage = null) }
     }
 
     private fun extractDurationMs(filePath: String): Long {
@@ -331,10 +172,4 @@ class MainViewModel(
             }
         }
     }
-}
-
-sealed interface MainUiState {
-    data object Loading : MainUiState
-    data class Success(val messages: List<AudioMessage>) : MainUiState
-    data class Error(val message: String) : MainUiState
 }
