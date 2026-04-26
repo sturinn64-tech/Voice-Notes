@@ -26,9 +26,18 @@ import java.util.Locale
 data class HistoryUiState(
     val isLoading: Boolean = false,
     val messages: List<AudioMessage> = emptyList(),
+
     val searchQuery: String = "",
     val sortOption: HistorySortOption = HistorySortOption.NEWEST,
     val favoritesOnly: Boolean = false,
+
+    val selectedFolder: String? = null,
+    val selectedTag: String? = null,
+    val folders: List<String> = emptyList(),
+    val tags: List<String> = emptyList(),
+
+    val isTrashMode: Boolean = false,
+
     val errorMessage: String? = null,
     val infoMessage: String? = null,
     val currentlyPlayingPath: String? = null
@@ -49,17 +58,23 @@ class HistoryViewModel(
     private val _uiState = MutableStateFlow(HistoryUiState(isLoading = true))
     val uiState: StateFlow<HistoryUiState> = _uiState.asStateFlow()
 
-    private var observeJob: Job? = null
+    private var observeActiveJob: Job? = null
+    private var observeTrashJob: Job? = null
     private var currentUserId: String? = null
-    private var allMessages: List<AudioMessage> = emptyList()
+
+    private var activeMessages: List<AudioMessage> = emptyList()
+    private var trashMessages: List<AudioMessage> = emptyList()
 
     fun loadMessages(userId: String) {
-        if (currentUserId == userId && observeJob != null) return
+        if (currentUserId == userId && observeActiveJob != null && observeTrashJob != null) return
 
         currentUserId = userId
-        observeJob?.cancel()
+        observeActiveJob?.cancel()
+        observeTrashJob?.cancel()
 
-        observeJob = viewModelScope.launch {
+        _uiState.update { it.copy(isLoading = true) }
+
+        observeActiveJob = viewModelScope.launch {
             repository.observeAudioMessagesForUser(userId)
                 .catch { e ->
                     _uiState.update {
@@ -70,7 +85,23 @@ class HistoryViewModel(
                     }
                 }
                 .collect { messages ->
-                    allMessages = messages
+                    activeMessages = messages
+                    applyFilters()
+                }
+        }
+
+        observeTrashJob = viewModelScope.launch {
+            repository.observeDeletedAudioMessagesForUser(userId)
+                .catch { e ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            errorMessage = e.message ?: "Ошибка загрузки корзины"
+                        )
+                    }
+                }
+                .collect { messages ->
+                    trashMessages = messages
                     applyFilters()
                 }
         }
@@ -91,6 +122,36 @@ class HistoryViewModel(
         applyFilters()
     }
 
+    fun selectFolder(folderName: String?) {
+        _uiState.update {
+            it.copy(
+                selectedFolder = folderName?.takeIf { folder -> folder.isNotBlank() }
+            )
+        }
+        applyFilters()
+    }
+
+    fun selectTag(tag: String?) {
+        _uiState.update {
+            it.copy(
+                selectedTag = tag?.takeIf { value -> value.isNotBlank() }
+            )
+        }
+        applyFilters()
+    }
+
+    fun toggleTrashMode() {
+        _uiState.update {
+            it.copy(
+                isTrashMode = !it.isTrashMode,
+                selectedFolder = null,
+                selectedTag = null,
+                favoritesOnly = false
+            )
+        }
+        applyFilters()
+    }
+
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
     }
@@ -101,6 +162,7 @@ class HistoryViewModel(
 
     fun playOrStop(filePath: String) {
         val current = _uiState.value.currentlyPlayingPath
+
         if (current == filePath && playbackManager.isPlaying(filePath)) {
             playbackManager.stop()
             _uiState.update { it.copy(currentlyPlayingPath = null) }
@@ -110,10 +172,14 @@ class HistoryViewModel(
         playbackManager.play(
             filePath = filePath,
             onStarted = {
-                _uiState.update { state -> state.copy(currentlyPlayingPath = filePath) }
+                _uiState.update { state ->
+                    state.copy(currentlyPlayingPath = filePath)
+                }
             },
             onCompleted = {
-                _uiState.update { state -> state.copy(currentlyPlayingPath = null) }
+                _uiState.update { state ->
+                    state.copy(currentlyPlayingPath = null)
+                }
             },
             onError = { error ->
                 _uiState.update {
@@ -127,6 +193,10 @@ class HistoryViewModel(
     }
 
     fun deleteRecording(message: AudioMessage) {
+        moveToTrash(message)
+    }
+
+    fun moveToTrash(message: AudioMessage) {
         if (message.id == 0L) return
 
         if (_uiState.value.currentlyPlayingPath == message.filePath) {
@@ -136,10 +206,43 @@ class HistoryViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val file = File(message.filePath)
-                val fileDeleted = !file.exists() || file.delete()
+                repository.moveToTrash(message.id)
+                _uiState.update {
+                    it.copy(infoMessage = "Запись перемещена в корзину")
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(errorMessage = e.message ?: "Не удалось переместить запись в корзину")
+                }
+            }
+        }
+    }
 
-                if (!fileDeleted) {
+    fun restoreRecording(message: AudioMessage) {
+        if (message.id == 0L) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.restoreFromTrash(message.id)
+                _uiState.update {
+                    it.copy(infoMessage = "Запись восстановлена")
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(errorMessage = e.message ?: "Не удалось восстановить запись")
+                }
+            }
+        }
+    }
+
+    fun deleteForever(message: AudioMessage) {
+        if (message.id == 0L) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val file = File(message.filePath)
+
+                if (file.exists() && !file.delete()) {
                     _uiState.update {
                         it.copy(errorMessage = "Не удалось удалить аудиофайл с устройства")
                     }
@@ -147,6 +250,10 @@ class HistoryViewModel(
                 }
 
                 repository.deleteAudioMessage(message)
+
+                _uiState.update {
+                    it.copy(infoMessage = "Запись удалена навсегда")
+                }
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(errorMessage = e.message ?: "Не удалось удалить запись")
@@ -155,8 +262,34 @@ class HistoryViewModel(
         }
     }
 
+    fun emptyTrash() {
+        val userId = currentUserId ?: return
+        val messagesToDelete = trashMessages
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                messagesToDelete.forEach { message ->
+                    val file = File(message.filePath)
+                    if (file.exists()) {
+                        file.delete()
+                    }
+                }
+
+                repository.emptyTrash(userId)
+
+                _uiState.update {
+                    it.copy(infoMessage = "Корзина очищена")
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(errorMessage = e.message ?: "Не удалось очистить корзину")
+                }
+            }
+        }
+    }
+
     fun toggleFavorite(message: AudioMessage) {
-        if (message.id == 0L) return
+        if (message.id == 0L || message.isDeleted) return
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -177,7 +310,7 @@ class HistoryViewModel(
         newTitle: String,
         newTranscript: String
     ) {
-        if (message.id == 0L) return
+        if (message.id == 0L || message.isDeleted) return
 
         val safeTitle = newTitle.trim().ifBlank {
             message.fileName.substringBeforeLast(".").ifBlank { message.fileName }
@@ -199,12 +332,89 @@ class HistoryViewModel(
         }
     }
 
+    fun updateFolder(
+        message: AudioMessage,
+        folderName: String
+    ) {
+        if (message.id == 0L || message.isDeleted) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.updateFolder(
+                    messageId = message.id,
+                    folderName = folderName.trim()
+                )
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(errorMessage = e.message ?: "Не удалось изменить папку")
+                }
+            }
+        }
+    }
+
+    fun addTag(
+        message: AudioMessage,
+        tag: String
+    ) {
+        if (message.id == 0L || message.isDeleted) return
+
+        val safeTag = tag.trim().removePrefix("#")
+        if (safeTag.isBlank()) return
+
+        val updatedTags = (message.tags.map { it.name } + safeTag)
+            .map { it.trim().removePrefix("#") }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase(Locale.getDefault()) }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.updateTags(
+                    messageId = message.id,
+                    tags = updatedTags
+                )
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(errorMessage = e.message ?: "Не удалось добавить тег")
+                }
+            }
+        }
+    }
+
+    fun removeTag(
+        message: AudioMessage,
+        tag: String
+    ) {
+        if (message.id == 0L || message.isDeleted) return
+
+        val tagToRemove = tag.trim().removePrefix("#")
+
+        val updatedTags = message.tags
+            .map { it.name }
+            .filterNot {
+                it.equals(tagToRemove, ignoreCase = true)
+            }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.updateTags(
+                    messageId = message.id,
+                    tags = updatedTags
+                )
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(errorMessage = e.message ?: "Не удалось удалить тег")
+                }
+            }
+        }
+    }
+
     fun retryTranscription(message: AudioMessage) {
-        if (message.id == 0L) return
+        if (message.id == 0L || message.isDeleted) return
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val file = File(message.filePath)
+
                 if (!file.exists()) {
                     _uiState.update {
                         it.copy(errorMessage = "Файл записи не найден")
@@ -273,6 +483,7 @@ class HistoryViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val sourceFile = File(message.filePath)
+
                 if (!sourceFile.exists()) {
                     _uiState.update {
                         it.copy(errorMessage = "Аудиофайл не найден")
@@ -322,11 +533,19 @@ class HistoryViewModel(
             .format(Date(message.createdAt))
 
         val transcriptText = message.transcript.ifBlank { "Текст отсутствует" }
+        val folderText = message.folder?.name?.takeIf { it.isNotBlank() } ?: "Без папки"
+        val tagsText = message.tags
+            .map { it.name }
+            .filter { it.isNotBlank() }
+            .joinToString(", ")
+            .ifBlank { "Нет тегов" }
 
         return buildString {
             appendLine("Название: $title")
             appendLine("Дата: $dateText")
             appendLine("Файл: ${message.fileName}")
+            appendLine("Папка: $folderText")
+            appendLine("Теги: $tagsText")
             appendLine()
             appendLine("Текст заметки:")
             appendLine(transcriptText)
@@ -346,19 +565,67 @@ class HistoryViewModel(
 
     private fun applyFilters() {
         val state = _uiState.value
+
+        val sourceMessages = if (state.isTrashMode) {
+            trashMessages
+        } else {
+            activeMessages
+        }
+
+        val folders = activeMessages
+            .mapNotNull { it.folder?.name?.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase(Locale.getDefault()) }
+            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
+
+        val tags = activeMessages
+            .flatMap { it.tags }
+            .map { it.name.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase(Locale.getDefault()) }
+            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
+
         val query = state.searchQuery.trim().lowercase(Locale.getDefault())
 
-        val filtered = allMessages
+        val filtered = sourceMessages
             .asSequence()
             .filter { !state.favoritesOnly || it.isFavorite }
+            .filter { message ->
+                val selectedFolder = state.selectedFolder
+
+                selectedFolder.isNullOrBlank() ||
+                        message.folder?.name.equals(
+                            selectedFolder,
+                            ignoreCase = true
+                        )
+            }
+            .filter { message ->
+                val selectedTag = state.selectedTag
+
+                selectedTag.isNullOrBlank() ||
+                        message.tags.any { tag ->
+                            tag.name.equals(
+                                selectedTag,
+                                ignoreCase = true
+                            )
+                        }
+            }
             .filter { message ->
                 if (query.isBlank()) return@filter true
 
                 val title = message.title.lowercase(Locale.getDefault())
                 val fileName = message.fileName.lowercase(Locale.getDefault())
                 val transcript = message.transcript.lowercase(Locale.getDefault())
+                val folderName = message.folder?.name.orEmpty().lowercase(Locale.getDefault())
+                val tagText = message.tags
+                    .joinToString(" ") { it.name }
+                    .lowercase(Locale.getDefault())
 
-                query in title || query in fileName || query in transcript
+                query in title ||
+                        query in fileName ||
+                        query in transcript ||
+                        query in folderName ||
+                        query in tagText
             }
             .toList()
 
@@ -384,7 +651,9 @@ class HistoryViewModel(
         _uiState.update {
             it.copy(
                 isLoading = false,
-                messages = sorted
+                messages = sorted,
+                folders = folders,
+                tags = tags
             )
         }
     }
@@ -398,7 +667,9 @@ class HistoryViewModel(
         fun provideFactory(application: Application): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
-                override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                override fun <T : androidx.lifecycle.ViewModel> create(
+                    modelClass: Class<T>
+                ): T {
                     if (modelClass.isAssignableFrom(HistoryViewModel::class.java)) {
                         return HistoryViewModel(application) as T
                     }

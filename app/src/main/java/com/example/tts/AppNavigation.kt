@@ -52,8 +52,12 @@ fun AppNavigation(
         val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
             currentUser = firebaseAuth.currentUser
         }
+
         auth.addAuthStateListener(listener)
-        onDispose { auth.removeAuthStateListener(listener) }
+
+        onDispose {
+            auth.removeAuthStateListener(listener)
+        }
     }
 
     if (currentUser == null) {
@@ -96,6 +100,7 @@ private fun AuthorizedApp(
             BottomBar(navController = navController)
         }
     ) { paddingValues ->
+
         NavHost(
             navController = navController,
             startDestination = AppScreen.Record.route,
@@ -126,22 +131,33 @@ private fun AuthorizedApp(
             composable(AppScreen.History.route) {
                 LaunchedEffect(user.uid) {
                     historyViewModel.loadMessages(user.uid)
+                    historyViewModel.updateSortOption(appSettings.defaultHistorySort)
                 }
 
                 val historyUiState by historyViewModel.uiState.collectAsState()
 
                 HistoryScreen(
                     uiState = historyUiState,
+                    confirmDelete = appSettings.confirmDelete,
                     onSearchQueryChange = historyViewModel::updateSearchQuery,
                     onSortChange = historyViewModel::updateSortOption,
                     onToggleFavoritesOnly = historyViewModel::toggleFavoritesOnly,
+                    onSelectedFolderChange = historyViewModel::selectFolder,
+                    onSelectedTagChange = historyViewModel::selectTag,
+                    onToggleTrashMode = historyViewModel::toggleTrashMode,
                     onPlayClick = historyViewModel::playOrStop,
-                    onDeleteClick = historyViewModel::deleteRecording,
+                    onMoveToTrashClick = historyViewModel::moveToTrash,
+                    onRestoreClick = historyViewModel::restoreRecording,
+                    onDeleteForeverClick = historyViewModel::deleteForever,
                     onFavoriteClick = historyViewModel::toggleFavorite,
                     onUpdateMessage = historyViewModel::updateMessage,
+                    onUpdateFolder = historyViewModel::updateFolder,
+                    onAddTag = historyViewModel::addTag,
+                    onRemoveTag = historyViewModel::removeTag,
                     onRetryTranscription = historyViewModel::retryTranscription,
                     onExportTextClick = historyViewModel::exportText,
                     onExportAudioClick = historyViewModel::exportAudio,
+                    onEmptyTrashClick = historyViewModel::emptyTrash,
                     onClearError = historyViewModel::clearError,
                     onClearInfo = historyViewModel::clearInfo
                 )
@@ -154,9 +170,15 @@ private fun AuthorizedApp(
                     confirmDelete = appSettings.confirmDelete,
                     defaultSort = appSettings.defaultHistorySort,
                     appVersion = "1.0",
-                    onThemeModeChange = { settingsViewModel.updateThemeMode(it) },
-                    onConfirmDeleteChange = { settingsViewModel.updateConfirmDelete(it) },
-                    onDefaultSortChange = { settingsViewModel.updateDefaultHistorySort(it) },
+                    onThemeModeChange = {
+                        settingsViewModel.updateThemeMode(it)
+                    },
+                    onConfirmDeleteChange = {
+                        settingsViewModel.updateConfirmDelete(it)
+                    },
+                    onDefaultSortChange = {
+                        settingsViewModel.updateDefaultHistorySort(it)
+                    },
                     onSignOut = onSignOut
                 )
             }
@@ -180,6 +202,7 @@ private fun BottomBar(
                         popUpTo(navController.graph.findStartDestination().id) {
                             saveState = true
                         }
+
                         launchSingleTop = true
                         restoreState = true
                     }
@@ -190,7 +213,9 @@ private fun BottomBar(
                         contentDescription = screen.title
                     )
                 },
-                label = { Text(screen.title) }
+                label = {
+                    Text(screen.title)
+                }
             )
         }
     }

@@ -13,16 +13,11 @@ import com.example.tts.data.model.TranscriptionStatus
 import com.example.tts.data.repository.AudioRepository
 import com.example.tts.data.transcription.VoskTranscriptionService
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 
 data class MainUiState(
@@ -34,6 +29,8 @@ data class MainUiState(
 class MainViewModel(
     application: Application
 ) : AndroidViewModel(application) {
+
+    private val database = AppDatabase.getInstance(application)
 
     private val repository = AudioRepository(
         AppDatabase.getInstance(application).audioMessageDao()

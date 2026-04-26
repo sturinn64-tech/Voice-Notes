@@ -1,7 +1,5 @@
 package com.example.tts.data.model
 
-import com.google.firebase.Timestamp
-
 data class AudioMessage(
     val id: Long = 0L,
     val userId: String = "",
@@ -13,5 +11,11 @@ data class AudioMessage(
     val durationMs: Long = 0L,
     val isFavorite: Boolean = false,
     val transcriptionStatus: TranscriptionStatus = TranscriptionStatus.COMPLETED,
-    val transcriptionError: String? = null
+    val transcriptionError: String? = null,
+
+    val folder: Folder? = null,
+    val tags: List<Tag> = emptyList(),
+
+    val isDeleted: Boolean = false,
+    val deletedAt: Long? = null
 )
