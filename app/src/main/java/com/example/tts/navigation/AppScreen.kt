@@ -1,6 +1,7 @@
 package com.example.tts.navigation
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
@@ -34,4 +35,10 @@ val bottomBarScreens = listOf(
     AppScreen.Record,
     AppScreen.History,
     AppScreen.Settings
+)
+
+object Organization : AppScreen(
+    route = "organization",
+    title = "Организация",
+    icon = Icons.Filled.Folder
 )

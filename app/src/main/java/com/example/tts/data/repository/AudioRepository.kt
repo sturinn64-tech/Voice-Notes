@@ -175,4 +175,34 @@ class AudioRepository(
             error = error
         )
     }
+
+    fun observeFolderNamesForUser(userId: String): Flow<List<String>> {
+        return audioMessageDao.observeFolderNamesForUser(userId)
+    }
+
+    suspend fun createFolder(userId: String, folderName: String): Boolean {
+        val safeFolderName = folderName.trim()
+
+        if (safeFolderName.isBlank()) {
+            return false
+        }
+
+        val existingFolder = audioMessageDao.getFolderByName(
+            userId = userId,
+            name = safeFolderName
+        )
+
+        if (existingFolder != null) {
+            return false
+        }
+
+        val insertedId = audioMessageDao.insertFolder(
+            FolderEntity(
+                userId = userId,
+                name = safeFolderName
+            )
+        )
+
+        return insertedId != -1L
+    }
 }

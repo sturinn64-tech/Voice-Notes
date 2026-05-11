@@ -5,8 +5,10 @@ import android.app.Application
 import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -145,6 +147,7 @@ private fun AuthorizedApp(
                     onSelectedFolderChange = historyViewModel::selectFolder,
                     onSelectedTagChange = historyViewModel::selectTag,
                     onToggleTrashMode = historyViewModel::toggleTrashMode,
+                    onCreateFolder = historyViewModel::createFolder,
                     onPlayClick = historyViewModel::playOrStop,
                     onMoveToTrashClick = historyViewModel::moveToTrash,
                     onRestoreClick = historyViewModel::restoreRecording,
@@ -159,7 +162,7 @@ private fun AuthorizedApp(
                     onExportAudioClick = historyViewModel::exportAudio,
                     onEmptyTrashClick = historyViewModel::emptyTrash,
                     onClearError = historyViewModel::clearError,
-                    onClearInfo = historyViewModel::clearInfo
+                    onClearInfo = historyViewModel::clearInfo,
                 )
             }
 
@@ -202,7 +205,6 @@ private fun BottomBar(
                         popUpTo(navController.graph.findStartDestination().id) {
                             saveState = true
                         }
-
                         launchSingleTop = true
                         restoreState = true
                     }
@@ -215,7 +217,12 @@ private fun BottomBar(
                 },
                 label = {
                     Text(screen.title)
-                }
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                )
             )
         }
     }

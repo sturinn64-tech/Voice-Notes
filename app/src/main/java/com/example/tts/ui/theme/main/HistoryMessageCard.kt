@@ -90,6 +90,15 @@ fun HistoryMessageCard(
             .format(Date(message.createdAt))
     }
 
+    val folderName = message.folder?.name.orEmpty().trim()
+
+    val uniqueTagNames = remember(message.tags) {
+        message.tags
+            .map { it.name.trim().removePrefix("#") }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase(Locale.getDefault()) }
+    }
+
     AppSectionCard(
         modifier = modifier
     ) {
@@ -174,7 +183,7 @@ fun HistoryMessageCard(
                         )
 
                         DropdownMenuItem(
-                            text = { Text("Изменить папку") },
+                            text = { Text("Назначить папку") },
                             onClick = {
                                 showMenu = false
                                 onFolderClick()
@@ -271,68 +280,87 @@ fun HistoryMessageCard(
             }
         }
 
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+        val folderName = message.folder?.name.orEmpty()
+
+        Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            AppStatusBadge(
-                text = when (message.transcriptionStatus) {
-                    TranscriptionStatus.PROCESSING -> "Распознаётся"
-                    TranscriptionStatus.COMPLETED -> "Готово"
-                    TranscriptionStatus.ERROR -> "Ошибка"
-                    TranscriptionStatus.EMPTY -> "Без текста"
-                }
-            )
-
-            val folderName = message.folder?.name.orEmpty()
-
-            if (folderName.isNotBlank()) {
-                AssistChip(
-                    onClick = onFolderClick,
-                    label = {
-                        Text(
-                            text = "Папка: $folderName",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                )
-            }
-
-            if (!fileExists && !isTrashMode) {
-                AssistChip(
-                    onClick = {},
-                    label = {
-                        Text("Файл не найден")
-                    }
-                )
-            }
-        }
-
-        if (message.tags.isNotEmpty()) {
-            FlowRow(
+            Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
             ) {
-                message.tags.take(3).forEach { tag ->
+                AppStatusBadge(
+                    text = when (message.transcriptionStatus) {
+                        TranscriptionStatus.PROCESSING -> "Распознаётся"
+                        TranscriptionStatus.COMPLETED -> "Готово"
+                        TranscriptionStatus.ERROR -> "Ошибка"
+                        TranscriptionStatus.EMPTY -> "Без текста"
+                    }
+                )
+
+                if (folderName.isNotBlank()) {
                     AssistChip(
-                        onClick = onRemoveTagClick,
+                        onClick = onFolderClick,
+                        shape = RoundedCornerShape(12.dp),
+                        leadingIcon = {
+                            Text("📁")
+                        },
                         label = {
-                            Text("#${tag.name}")
+                            Text(
+                                text = folderName,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     )
                 }
 
-                if (message.tags.size > 3) {
+                if (!fileExists && !isTrashMode) {
+                    AssistChip(
+                        onClick = {},
+                        shape = RoundedCornerShape(12.dp),
+                        label = {
+                            Text("Файл не найден")
+                        }
+                    )
+                }
+            }
+
+        }
+
+        if (uniqueTagNames.isNotEmpty()) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                uniqueTagNames.take(3).forEach { tagName ->
                     AssistChip(
                         onClick = onRemoveTagClick,
+                        shape = RoundedCornerShape(12.dp),
                         label = {
-                            Text("+${message.tags.size - 3}")
+                            Text(
+                                text = "#$tagName",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    )
+                }
+
+                if (uniqueTagNames.size > 3) {
+                    AssistChip(
+                        onClick = onRemoveTagClick,
+                        shape = RoundedCornerShape(12.dp),
+                        label = {
+                            Text("+${uniqueTagNames.size - 3}")
                         }
                     )
                 }
             }
         }
+
 
         Text(
             text = message.transcript.ifBlank {

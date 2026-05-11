@@ -89,10 +89,17 @@ class MainViewModel(
                 }
 
                 if (transcriptionResult.isSuccess) {
+                    val transcript = transcriptionResult.getOrNull().orEmpty().trim()
+                    val status = if (transcript.isBlank()) {
+                        TranscriptionStatus.EMPTY
+                    } else {
+                        TranscriptionStatus.COMPLETED
+                    }
+
                     repository.updateTranscriptionState(
                         messageId = messageId,
-                        transcript = transcriptionResult.getOrNull().orEmpty(),
-                        status = TranscriptionStatus.COMPLETED,
+                        transcript = transcript,
+                        status = status,
                         error = null
                     )
 
@@ -100,22 +107,6 @@ class MainViewModel(
                         it.copy(
                             isSaving = false,
                             infoMessage = "Запись сохранена"
-                        )
-                    }
-                } else {
-                    repository.updateTranscriptionState(
-                        messageId = messageId,
-                        transcript = "",
-                        status = TranscriptionStatus.ERROR,
-                        error = transcriptionResult.exceptionOrNull()?.message
-                            ?: "Неизвестная ошибка распознавания"
-                    )
-
-                    _uiState.update {
-                        it.copy(
-                            isSaving = false,
-                            errorMessage = transcriptionResult.exceptionOrNull()?.message
-                                ?: "Не удалось распознать запись"
                         )
                     }
                 }

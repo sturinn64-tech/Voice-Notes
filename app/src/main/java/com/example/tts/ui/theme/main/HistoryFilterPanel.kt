@@ -6,13 +6,17 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -25,6 +29,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,21 +50,50 @@ import com.example.tts.ui.components.AppSectionCard
 @Composable
 fun HistoryFilterPanel(
     modifier: Modifier = Modifier,
-    uiState: HistoryUiState,
+
+    searchQuery: String,
+    sortOption: HistorySortOption,
+    favoritesOnly: Boolean,
+
+    folders: List<String>,
+    tags: List<String>,
+    selectedFolder: String?,
+    selectedTag: String?,
+    isTrashMode: Boolean,
+
     onSearchQueryChange: (String) -> Unit,
     onSortChange: (HistorySortOption) -> Unit,
     onToggleFavoritesOnly: () -> Unit,
-    onSelectedFolderChange: (String?) -> Unit,
-    onSelectedTagChange: (String?) -> Unit,
+
+    onCreateFolder: (String) -> Unit,
+    onFolderSelected: (String?) -> Unit,
+    onTagSelected: (String?) -> Unit,
     onToggleTrashMode: () -> Unit
 ) {
-    var showFiltersSheet by rememberSaveable { mutableStateOf(false) }
+    var showFiltersSheet by rememberSaveable {
+        mutableStateOf(false)
+    }
+
+    var showCreateFolderDialog by rememberSaveable { mutableStateOf(false) }
+    var newFolderName by rememberSaveable { mutableStateOf("") }
+
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true
+    )
+
+    val cleanFolders = folders
+        .filter { it.isNotBlank() }
+        .distinct()
+
+    val cleanTags = tags
+        .filter { it.isNotBlank() }
+        .distinct()
 
     val hasActiveFilters =
-        uiState.sortOption != HistorySortOption.NEWEST ||
-                uiState.favoritesOnly ||
-                !uiState.selectedFolder.isNullOrBlank() ||
-                !uiState.selectedTag.isNullOrBlank()
+        favoritesOnly ||
+                !selectedFolder.isNullOrBlank() ||
+                !selectedTag.isNullOrBlank() ||
+                sortOption != HistorySortOption.NEWEST
 
     AppSectionCard(
         modifier = modifier,
@@ -69,10 +103,10 @@ fun HistoryFilterPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             OutlinedTextField(
-                value = uiState.searchQuery,
+                value = searchQuery,
                 onValueChange = onSearchQueryChange,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = RoundedCornerShape(20.dp),
                 singleLine = true,
                 label = {
                     Text("Поиск")
@@ -82,15 +116,12 @@ fun HistoryFilterPanel(
                         imageVector = Icons.Filled.Search,
                         contentDescription = null
                     )
-                },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Text
-                )
+                }
             )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedButton(
@@ -98,26 +129,22 @@ fun HistoryFilterPanel(
                         showFiltersSheet = true
                     },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(18.dp)
                 ) {
-                    Text(
-                        text = "Фильтры",
-                        style = MaterialTheme.typography.labelLarge
-                    )
+                    Text("Фильтры")
                 }
 
                 OutlinedButton(
                     onClick = onToggleTrashMode,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(18.dp)
                 ) {
                     Text(
-                        text = if (uiState.isTrashMode) {
+                        text = if (isTrashMode) {
                             "История"
                         } else {
                             "Корзина"
-                        },
-                        style = MaterialTheme.typography.labelLarge
+                        }
                     )
                 }
             }
@@ -127,36 +154,36 @@ fun HistoryFilterPanel(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    if (uiState.sortOption != HistorySortOption.NEWEST) {
+                    if (sortOption != HistorySortOption.NEWEST) {
                         ActiveFilterChip(
-                            text = uiState.sortOption.title,
+                            text = sortOption.titleText(),
                             onClick = {
                                 onSortChange(HistorySortOption.NEWEST)
                             }
                         )
                     }
 
-                    if (uiState.favoritesOnly) {
+                    if (favoritesOnly) {
                         ActiveFilterChip(
                             text = "Избранное",
                             onClick = onToggleFavoritesOnly
                         )
                     }
 
-                    uiState.selectedFolder?.let { folder ->
+                    if (!selectedFolder.isNullOrBlank()) {
                         ActiveFilterChip(
-                            text = "Папка: $folder",
+                            text = "Папка: $selectedFolder",
                             onClick = {
-                                onSelectedFolderChange(null)
+                                onFolderSelected(null)
                             }
                         )
                     }
 
-                    uiState.selectedTag?.let { tag ->
+                    if (!selectedTag.isNullOrBlank()) {
                         ActiveFilterChip(
-                            text = "#$tag",
+                            text = "#$selectedTag",
                             onClick = {
-                                onSelectedTagChange(null)
+                                onTagSelected(null)
                             }
                         )
                     }
@@ -164,10 +191,10 @@ fun HistoryFilterPanel(
             }
 
             Text(
-                text = if (uiState.isTrashMode) {
-                    "В корзине: ${uiState.messages.size}"
+                text = if (isTrashMode) {
+                    "В корзине: ${folders.size.coerceAtLeast(0)}"
                 } else {
-                    "Найдено записей: ${uiState.messages.size}"
+                    "Фильтры применяются к истории записей"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -179,62 +206,84 @@ fun HistoryFilterPanel(
         ModalBottomSheet(
             onDismissRequest = {
                 showFiltersSheet = false
-            }
+            },
+            sheetState = sheetState
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .fillMaxHeight(0.92f)
                     .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState())
                     .padding(
-                        start = 16.dp,
-                        end = 16.dp,
-                        bottom = 24.dp
+                        start = 24.dp,
+                        end = 24.dp,
+                        bottom = 28.dp
                     ),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
                 Text(
                     text = "Фильтры истории",
-                    style = MaterialTheme.typography.titleLarge
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
                         text = "Сортировка",
-                        style = MaterialTheme.typography.titleSmall
+                        style = MaterialTheme.typography.titleMedium
                     )
 
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        HistorySortOption.entries.forEach { sort ->
-                            FilterChip(
-                                selected = uiState.sortOption == sort,
-                                onClick = {
-                                    onSortChange(sort)
-                                },
-                                label = {
-                                    Text(sort.title)
-                                }
-                            )
-                        }
+                        FilterChip(
+                            selected = sortOption == HistorySortOption.NEWEST,
+                            onClick = {
+                                onSortChange(HistorySortOption.NEWEST)
+                            },
+                            label = {
+                                Text("Сначала новые")
+                            }
+                        )
+
+                        FilterChip(
+                            selected = sortOption == HistorySortOption.OLDEST,
+                            onClick = {
+                                onSortChange(HistorySortOption.OLDEST)
+                            },
+                            label = {
+                                Text("Сначала старые")
+                            }
+                        )
+
+                        FilterChip(
+                            selected = sortOption == HistorySortOption.TITLE,
+                            onClick = {
+                                onSortChange(HistorySortOption.TITLE)
+                            },
+                            label = {
+                                Text("По названию")
+                            }
+                        )
                     }
                 }
 
                 HorizontalDivider()
 
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
                         text = "Дополнительно",
-                        style = MaterialTheme.typography.titleSmall
+                        style = MaterialTheme.typography.titleMedium
                     )
 
                     FilterChip(
-                        selected = uiState.favoritesOnly,
+                        selected = favoritesOnly,
                         onClick = onToggleFavoritesOnly,
                         label = {
                             Text("Только избранное")
@@ -242,87 +291,117 @@ fun HistoryFilterPanel(
                     )
                 }
 
-                if (!uiState.isTrashMode) {
-                    HorizontalDivider()
+                HorizontalDivider()
 
-                    Column(
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Папки",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    OutlinedButton(
+                        onClick = {
+                            showCreateFolderDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text("Создать папку")
+                    }
+
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = "Папки",
-                            style = MaterialTheme.typography.titleSmall
+                        FilterChip(
+                            selected = selectedFolder == null,
+                            onClick = {
+                                onFolderSelected(null)
+                            },
+                            label = {
+                                Text("Все папки")
+                            }
                         )
 
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                        cleanFolders.forEach { folder ->
                             FilterChip(
-                                selected = uiState.selectedFolder == null,
+                                selected = selectedFolder == folder,
                                 onClick = {
-                                    onSelectedFolderChange(null)
+                                    onFolderSelected(folder)
                                 },
                                 label = {
-                                    Text("Все папки")
+                                    Text(
+                                        text = folder,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             )
-
-                            uiState.folders.forEach { folder ->
-                                FilterChip(
-                                    selected = uiState.selectedFolder == folder,
-                                    onClick = {
-                                        onSelectedFolderChange(folder)
-                                    },
-                                    label = {
-                                        Text(
-                                            text = folder,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                )
-                            }
                         }
                     }
 
-                    HorizontalDivider()
-
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                    if (cleanFolders.isEmpty()) {
                         Text(
-                            text = "Теги",
-                            style = MaterialTheme.typography.titleSmall
+                            text = "Папок пока нет",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            FilterChip(
-                                selected = uiState.selectedTag == null,
-                                onClick = {
-                                    onSelectedTagChange(null)
-                                },
-                                label = {
-                                    Text("Все теги")
-                                }
-                            )
-
-                            uiState.tags.forEach { tag ->
-                                FilterChip(
-                                    selected = uiState.selectedTag == tag,
-                                    onClick = {
-                                        onSelectedTagChange(tag)
-                                    },
-                                    label = {
-                                        Text("#$tag")
-                                    }
-                                )
-                            }
-                        }
                     }
                 }
+
+                HorizontalDivider()
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Теги",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = selectedTag == null,
+                            onClick = {
+                                onTagSelected(null)
+                            },
+                            label = {
+                                Text("Все теги")
+                            }
+                        )
+
+                        cleanTags.forEach { tag ->
+                            FilterChip(
+                                selected = selectedTag == tag,
+                                onClick = {
+                                    onTagSelected(tag)
+                                },
+                                label = {
+                                    Text(
+                                        text = "#$tag",
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            )
+                        }
+                    }
+
+                    if (cleanTags.isEmpty()) {
+                        Text(
+                            text = "Тегов пока нет",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                HorizontalDivider()
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -334,12 +413,12 @@ fun HistoryFilterPanel(
                             onSearchQueryChange("")
                             onSortChange(HistorySortOption.NEWEST)
 
-                            if (uiState.favoritesOnly) {
+                            if (favoritesOnly) {
                                 onToggleFavoritesOnly()
                             }
 
-                            onSelectedFolderChange(null)
-                            onSelectedTagChange(null)
+                            onFolderSelected(null)
+                            onTagSelected(null)
                         }
                     ) {
                         Text("Сбросить")
@@ -349,13 +428,66 @@ fun HistoryFilterPanel(
                         modifier = Modifier.weight(1f),
                         onClick = {
                             showFiltersSheet = false
-                        }
+                        },
+                        shape = RoundedCornerShape(18.dp)
                     ) {
                         Text("Готово")
                     }
                 }
             }
         }
+    }
+
+    if (showCreateFolderDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showCreateFolderDialog = false
+                newFolderName = ""
+            },
+            title = {
+                Text("Новая папка")
+            },
+            text = {
+                OutlinedTextField(
+                    value = newFolderName,
+                    onValueChange = { newFolderName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    label = { Text("Название папки") },
+                    placeholder = { Text("Например: Учёба") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = newFolderName.trim().isNotBlank(),
+                    onClick = {
+                        val safeName = newFolderName.trim()
+
+                        if (safeName.isNotBlank()) {
+                            onCreateFolder(safeName)
+                            newFolderName = ""
+                            showCreateFolderDialog = false
+                        }
+                    }
+                ) {
+                    Text("Создать")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showCreateFolderDialog = false
+                        newFolderName = ""
+                    }
+                ) {
+                    Text("Отмена")
+                }
+            }
+        )
     }
 }
 
@@ -374,4 +506,12 @@ private fun ActiveFilterChip(
             )
         }
     )
+}
+
+private fun HistorySortOption.titleText(): String {
+    return when (this) {
+        HistorySortOption.NEWEST -> "Сначала новые"
+        HistorySortOption.OLDEST -> "Сначала старые"
+        HistorySortOption.TITLE -> "По названию"
+    }
 }

@@ -107,6 +107,16 @@ interface AudioMessageDao {
     )
     suspend fun getFolderByName(userId: String, name: String): FolderEntity?
 
+    @Query(
+        """
+    SELECT name 
+    FROM folders 
+    WHERE userId = :userId 
+    ORDER BY name COLLATE NOCASE ASC
+    """
+    )
+    fun observeFolderNamesForUser(userId: String): Flow<List<String>>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertTag(tag: TagEntity): Long
 

@@ -64,9 +64,16 @@ class HistoryViewModel(
 
     private var activeMessages: List<AudioMessage> = emptyList()
     private var trashMessages: List<AudioMessage> = emptyList()
+    private var observeFoldersJob: Job? = null
+    private var allFolders: List<String> = emptyList()
 
     fun loadMessages(userId: String) {
-        if (currentUserId == userId && observeActiveJob != null && observeTrashJob != null) return
+        if (
+            currentUserId == userId &&
+            observeActiveJob != null &&
+            observeTrashJob != null &&
+            observeFoldersJob != null
+        ) return
 
         currentUserId = userId
         observeActiveJob?.cancel()
@@ -105,6 +112,21 @@ class HistoryViewModel(
                     applyFilters()
                 }
         }
+
+        observeFoldersJob?.cancel()
+
+        observeFoldersJob = viewModelScope.launch {
+            repository.observeFolderNamesForUser(userId)
+                .catch { e ->
+                    _uiState.update {
+                        it.copy(errorMessage = e.message ?: "Ошибка загрузки папок")
+                    }
+                }
+                .collect { folders ->
+                    allFolders = folders
+                    applyFilters()
+                }
+        }
     }
 
     fun updateSearchQuery(query: String) {
@@ -120,6 +142,41 @@ class HistoryViewModel(
     fun toggleFavoritesOnly() {
         _uiState.update { it.copy(favoritesOnly = !it.favoritesOnly) }
         applyFilters()
+    }
+
+    fun createFolder(folderName: String) {
+        val userId = currentUserId ?: return
+        val safeFolderName = folderName.trim()
+
+        if (safeFolderName.isBlank()) {
+            _uiState.update {
+                it.copy(errorMessage = "Введите название папки")
+            }
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val created = repository.createFolder(
+                    userId = userId,
+                    folderName = safeFolderName
+                )
+
+                _uiState.update {
+                    it.copy(
+                        infoMessage = if (created) {
+                            "Папка создана"
+                        } else {
+                            "Такая папка уже есть"
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(errorMessage = e.message ?: "Не удалось создать папку")
+                }
+            }
+        }
     }
 
     fun selectFolder(folderName: String?) {
@@ -434,18 +491,18 @@ class HistoryViewModel(
                 }
 
                 if (result.isSuccess) {
+                    val transcript = result.getOrNull().orEmpty().trim()
+                    val status = if (transcript.isBlank()) {
+                        TranscriptionStatus.EMPTY
+                    } else {
+                        TranscriptionStatus.COMPLETED
+                    }
+
                     repository.updateTranscriptionState(
                         messageId = message.id,
-                        transcript = result.getOrNull().orEmpty(),
-                        status = TranscriptionStatus.COMPLETED,
+                        transcript = transcript,
+                        status = status,
                         error = null
-                    )
-                } else {
-                    repository.updateTranscriptionState(
-                        messageId = message.id,
-                        transcript = "",
-                        status = TranscriptionStatus.ERROR,
-                        error = result.exceptionOrNull()?.message ?: "Ошибка распознавания"
                     )
                 }
             } catch (e: Exception) {
@@ -572,11 +629,13 @@ class HistoryViewModel(
             activeMessages
         }
 
-        val folders = activeMessages
-            .mapNotNull { it.folder?.name?.trim() }
-            .filter { it.isNotBlank() }
-            .distinctBy { it.lowercase(Locale.getDefault()) }
-            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
+        val folders = allFolders.ifEmpty {
+            activeMessages
+                .mapNotNull { it.folder?.name?.trim() }
+                .filter { it.isNotBlank() }
+                .distinctBy { it.lowercase(Locale.getDefault()) }
+                .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
+        }
 
         val tags = activeMessages
             .flatMap { it.tags }

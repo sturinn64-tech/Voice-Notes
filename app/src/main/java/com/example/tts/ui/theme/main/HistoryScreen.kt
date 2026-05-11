@@ -48,6 +48,7 @@ import com.example.tts.data.model.AudioMessage
 import com.example.tts.data.settings.HistorySortOption
 import com.example.tts.ui.components.AppSectionCard
 import java.io.File
+import java.util.Locale
 
 @Composable
 fun HistoryScreen(
@@ -69,6 +70,7 @@ fun HistoryScreen(
     onFavoriteClick: (AudioMessage) -> Unit,
 
     onUpdateMessage: (AudioMessage, String, String) -> Unit,
+    onCreateFolder: (String) -> Unit,
     onUpdateFolder: (AudioMessage, String) -> Unit,
     onAddTag: (AudioMessage, String) -> Unit,
     onRemoveTag: (AudioMessage, String) -> Unit,
@@ -159,9 +161,8 @@ fun HistoryScreen(
     pendingFolder?.let { message ->
         FolderDialog(
             message = message,
-            onDismiss = {
-                pendingFolder = null
-            },
+            folders = uiState.folders,
+            onDismiss = { pendingFolder = null },
             onSave = { folderName ->
                 onUpdateFolder(message, folderName)
                 pendingFolder = null
@@ -256,13 +257,25 @@ fun HistoryScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .widthIn(max = 700.dp),
-                            uiState = uiState,
+
+                            searchQuery = uiState.searchQuery,
+                            sortOption = uiState.sortOption,
+                            favoritesOnly = uiState.favoritesOnly,
+
+                            folders = uiState.folders,
+                            tags = uiState.tags,
+                            selectedFolder = uiState.selectedFolder,
+                            selectedTag = uiState.selectedTag,
+                            isTrashMode = uiState.isTrashMode,
+
                             onSearchQueryChange = onSearchQueryChange,
                             onSortChange = onSortChange,
                             onToggleFavoritesOnly = onToggleFavoritesOnly,
-                            onSelectedFolderChange = onSelectedFolderChange,
-                            onSelectedTagChange = onSelectedTagChange,
-                            onToggleTrashMode = onToggleTrashMode
+
+                            onFolderSelected = onSelectedFolderChange,
+                            onTagSelected = onSelectedTagChange,
+                            onToggleTrashMode = onToggleTrashMode,
+                            onCreateFolder = onCreateFolder,
                         )
                     }
 
@@ -427,42 +440,113 @@ private fun EmptyHistoryState(
 @Composable
 private fun FolderDialog(
     message: AudioMessage,
+    folders: List<String>,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit
 ) {
-    var folderName by remember(message.id) {
-        mutableStateOf(message.folder?.name.orEmpty())
+    var newFolderName by rememberSaveable(message.id) {
+        mutableStateOf("")
+    }
+
+    val currentFolderName = message.folder?.name.orEmpty()
+
+    val preparedFolders = remember(folders) {
+        folders
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase(Locale.getDefault()) }
+            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("Папка")
+            Text("Назначить папку")
         },
         text = {
-            androidx.compose.material3.OutlinedTextField(
-                value = folderName,
-                onValueChange = {
-                    folderName = it
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                label = {
-                    Text("Название папки")
-                },
-                placeholder = {
-                    Text("Например: Учёба")
-                },
-                singleLine = true
-            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (currentFolderName.isNotBlank()) {
+                    Text(
+                        text = "Сейчас: $currentFolderName",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        onSave("")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    enabled = currentFolderName.isNotBlank()
+                ) {
+                    Text("Без папки")
+                }
+
+                if (preparedFolders.isEmpty()) {
+                    Text(
+                        text = "Папок пока нет. Создай новую ниже.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        text = "Выбрать существующую",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+
+                    preparedFolders.forEach { folder ->
+                        OutlinedButton(
+                            onClick = {
+                                onSave(folder)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Text(
+                                text = if (folder.equals(currentFolderName, ignoreCase = true)) {
+                                    "✓ $folder"
+                                } else {
+                                    folder
+                                }
+                            )
+                        }
+                    }
+                }
+
+                androidx.compose.material3.HorizontalDivider()
+
+                Text(
+                    text = "Или создать новую",
+                    style = MaterialTheme.typography.titleSmall
+                )
+
+                androidx.compose.material3.OutlinedTextField(
+                    value = newFolderName,
+                    onValueChange = { newFolderName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    label = { Text("Название папки") },
+                    placeholder = { Text("Например: Учёба") },
+                    singleLine = true
+                )
+            }
         },
         confirmButton = {
             TextButton(
+                enabled = newFolderName.trim().isNotBlank(),
                 onClick = {
-                    onSave(folderName)
+                    val safeName = newFolderName.trim()
+
+                    if (safeName.isNotBlank()) {
+                        onSave(safeName)
+                    }
                 }
             ) {
-                Text("Сохранить")
+                Text("Создать и назначить")
             }
         },
         dismissButton = {
